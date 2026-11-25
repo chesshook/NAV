@@ -42,7 +42,7 @@ def _candidate_score(
     preserved = sum(weights.get(kind, 0.0) * value for kind, value in preservation.items())
     task_fit = 0.20 if candidate.act in {
         "reciprocate_meeting", "reciprocate_greeting", "acknowledge_gratitude",
-        "reciprocate_farewell", "answer_wellbeing", "identify_self",
+        "reciprocate_farewell", "answer_wellbeing", "identify_self", "confirm_presence",
     } else 0.0
     missing_requirements = sum(
         0.035 for requirement in candidate.requirements
@@ -121,6 +121,16 @@ def solve_response(
                 recipient="you",
                 requirements=("acknowledge_incomplete_question", "invite_specific_topic"),
                 utility=0.20,
+            ),
+        )
+    elif graph.speech_act == "request.presence_check":
+        candidates = (
+            ResponseMeaning(
+                act="confirm_presence",
+                predicate="be_present",
+                recipient="you",
+                requirements=("answer_presence_question", "state_current_availability"),
+                utility=0.24,
             ),
         )
     elif graph.speech_act == "request.identity":
