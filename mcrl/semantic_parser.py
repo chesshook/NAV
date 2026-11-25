@@ -33,7 +33,7 @@ POSITIVE_MODIFIERS = {
 }
 MEETING_WORDS = {"meet", "meets", "meeting", "met"}
 GREETING_WORDS = {"hi", "hello", "hey", "howdy", "yo"}
-GRATITUDE_WORDS = {"thanks", "thank", "thx", "appreciate", "grateful"}
+GRATITUDE_WORDS = {"thanks", "thank", "thx", "appreciate", "grateful", "welcome"}
 FAREWELL_WORDS = {"bye", "goodbye", "farewell", "later"}
 NEGATION_WORDS = {"not", "never", "no", "cannot", "can't", "isn't", "aren't", "doesn't", "don't", "without"}
 BEFORE_WORDS = {"before", "earlier", "previously"}
@@ -106,7 +106,7 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
     temporal = "before" if _has(words, BEFORE_WORDS) else "after" if _has(words, AFTER_WORDS) else "present" if _has(words, PRESENT_WORDS) else "unspecified"
     comparison = "more_than" if _has(words, MORE_WORDS) and "than" in words else "less_than" if _has(words, LESS_WORDS) and "than" in words else "none"
 
-    if meeting and modifiers:
+    if meeting and modifiers and not negated:
         speech_act = "social.pleasantry"
         intent = "social"
     elif greeting:
@@ -220,7 +220,5 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
         if word not in known and not any(node.value.lower() == word for node in builder.nodes):
             add("topic.lexical", "topic", word, word, 0.65)
 
-    if discourse is not None:
-        discourse.observe_parse(words, tuple(node.value for node in builder.nodes if node.kind in {"topic", "entity"}))
 
     return builder.build(original, normalized, words, lexical_tokens, intent)
