@@ -114,6 +114,15 @@ def solve_response(
                 utility=0.20,
             ),
         )
+    elif graph.speech_act == "request.clarification":
+        candidates = (
+            ResponseMeaning(
+                act="ask_clarification",
+                recipient="you",
+                requirements=("acknowledge_incomplete_question", "invite_specific_topic"),
+                utility=0.20,
+            ),
+        )
     elif graph.speech_act == "request.identity":
         candidates = (
             ResponseMeaning(
