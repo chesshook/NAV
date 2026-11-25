@@ -14,8 +14,16 @@ def _print_answer(engine: MCRLanguageEngine, utterance: str, debug: bool = False
     result = engine.answer(utterance)
     print("\nMCR-L:", result.text)
     mode = result.diagnostics.get("mode", "")
-    score_label = "calculation" if mode == "calculation" else "meaning-preservation" if mode == "dialogue_composition" else "fact-support" if mode == "fact_composition" else "evidence-score"
-    print(f"[{score_label}={result.confidence:.3f} | abstained={result.abstained}]")
+    if mode == "calculation":
+        print("[capability=bounded-arithmetic | evaluated=True]")
+    elif mode == "dialogue_composition":
+        print(f"[meaning-check={result.confidence:.3f} | abstained={result.abstained}]")
+    elif mode == "fact_composition":
+        print(f"[source-confidence-metadata={result.confidence:.3f} | abstained={result.abstained}]")
+    elif mode == "unknown_topic_or_property":
+        print("[knowledge-match=none | abstained=True]")
+    else:
+        print(f"[status={'abstained' if result.abstained else 'answered'} | confidence-metadata={result.confidence:.3f}]")
     if result.selected_title:
         print(f"[basis={result.selected_title} | source={result.source}]")
     if debug:
