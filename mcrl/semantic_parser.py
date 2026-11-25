@@ -215,6 +215,12 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
     words = _expand(raw_words)
     normalized = " ".join(words)
     has_question_mark = "?" in parts
+    indirect_question = (
+        words[:3] in {("can", "you", "tell"), ("could", "you", "tell"), ("would", "you", "tell")}
+        or words[:4] in {("can", "you", "explain", "the"), ("could", "you", "explain", "the")}
+        or _contains_phrase(words, ("do", "you", "know"))
+    )
+    question_form = has_question_mark or bool(words and words[0] in QUESTION_WORDS) or indirect_question
 
     modifiers = [word for word in words if word in POSITIVE_MODIFIERS]
     negative_modifiers = [word for word in words if word in NEGATIVE_MODIFIERS]
@@ -233,9 +239,9 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
     presence_confirmation = _is_presence_confirmation(words)
     prefix_length = _prefix_length(words)
     about_request = "about" in words and (
-        has_question_mark or _has(words, {"tell", "say", "give", "know", "anything", "something"})
+        question_form or _has(words, {"tell", "say", "give", "know", "anything", "something"})
     )
-    topic_text, topic_is_resolved = _extract_topic(words, about_request, discourse, has_question_mark)
+    topic_text, topic_is_resolved = _extract_topic(words, about_request, discourse, question_form)
     property_words = [word for word in words if word in PROPERTY_WORDS]
     temporal = "before" if _has(words, BEFORE_WORDS) else "after" if _has(words, AFTER_WORDS) else "present" if _has(words, PRESENT_WORDS) else "unspecified"
     comparison = "more_than" if _has(words, MORE_WORDS) and "than" in words else "less_than" if _has(words, LESS_WORDS) and "than" in words else "none"
@@ -285,9 +291,9 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
         speech_act, intent = "social.positive_acknowledgement", "social"
     elif negative_ack:
         speech_act, intent = "social.empathetic_acknowledgement", "social"
-    elif (has_question_mark or (words and words[0] in QUESTION_WORDS)) and not topic_text:
+    elif question_form and not topic_text:
         speech_act, intent = "request.clarification", "clarification"
-    elif has_question_mark or (words and words[0] in QUESTION_WORDS):
+    elif question_form:
         speech_act, intent = "request.information", "question"
     elif about_request and topic_text:
         speech_act, intent = "request.topic_information", "topic_information"
