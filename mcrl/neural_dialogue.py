@@ -318,8 +318,16 @@ def _compact_history(history: Sequence[Mapping[str, str]], limit: int = 8) -> li
     return compact
 
 
+def _string_list(value: Any, field_name: str, maximum: int) -> list[str]:
+    if not isinstance(value, list) or len(value) > maximum:
+        raise LocalModelError(f"Semantic frame field {field_name} must be a list of at most {maximum} strings.")
+    if not all(isinstance(item, str) for item in value):
+        raise LocalModelError(f"Semantic frame field {field_name} must contain only strings.")
+    return value
+
+
 def _validate_interpretation(frame: dict[str, Any]) -> dict[str, Any]:
-    """Fail closed on malformed or semantically incomplete model frames."""
+    """Validate the entire typed frame, not just its outer JSON keys."""
     required = {
         "interpretation", "speech_act", "intent", "topic", "references", "clauses",
         "requires_knowledge", "knowledge_target", "needs_clarification",
@@ -338,22 +346,47 @@ def _validate_interpretation(frame: dict[str, Any]) -> dict[str, Any]:
     for key in ("interpretation", "clarification_question", "response_goal"):
         if not isinstance(frame[key], str):
             raise LocalModelError(f"Semantic frame field {key} must be text.")
-    if frame["topic"] is not None and not isinstance(frame["topic"], str):
-        raise LocalModelError("Semantic frame topic must be text or null.")
-    if frame["knowledge_target"] is not None and not isinstance(frame["knowledge_target"], str):
-        raise LocalModelError("Semantic frame knowledge_target must be text or null.")
-    if not isinstance(frame["references"], list) or not all(
-        isinstance(item, str) for item in frame["references"]
-    ):
-        raise LocalModelError("Semantic frame references must be a list of strings.")
-    if not isinstance(frame["clauses"], list) or not isinstance(frame["constraints"], list):
-        raise LocalModelError("Semantic frame clauses and constraints must be lists.")
+    for key in ("topic", "knowledge_target"):
+        if frame[key] is not None and not isinstance(frame[key], str):
+            raise LocalModelError(f"Semantic frame field {key} must be text or null.")
+    _string_list(frame["references"], "references", 8)
+    _string_list(frame["constraints"], "constraints", 12)
+    if not isinstance(frame["clauses"], list) or len(frame["clauses"]) > 8:
+        raise LocalModelError("Semantic frame clauses must be a list of at most 8 objects.")
+    clause_keys = {"predicate", "agent", "patient", "polarity", "modality", "time"}
+    for index, clause in enumerate(frame["clauses"]):
+        if not isinstance(clause, dict) or set(clause) != clause_keys:
+            raise LocalModelError(f"Semantic frame clause {index} has an invalid shape.")
+        for key in clause_keys - {"polarity"}:
+            if not isinstance(clause[key], str):
+                raise LocalModelError(f"Semantic frame clause {index}.{key} must be text.")
+        if clause["polarity"] not in {"positive", "negative", "uncertain"}:
+            raise LocalModelError(f"Semantic frame clause {index} has invalid polarity.")
     for key in ("requires_knowledge", "needs_clarification"):
         if not isinstance(frame[key], bool):
             raise LocalModelError(f"Semantic frame field {key} must be boolean.")
     if frame["ambiguity"] not in {"none", "low", "high"}:
         raise LocalModelError("Semantic frame ambiguity must be none, low, or high.")
     return frame
+
+
+def _validate_plan(plan: dict[str, Any]) -> dict[str, Any]:
+    """Validate the planner's decision and every audit field before realization."""
+    required = {"decision", "steps", "evidence_to_use", "uncertainties", "response_requirements"}
+    if set(plan) != required:
+        raise LocalModelError("Deliberation stage returned an invalid plan shape.")
+    decisions = {
+        "reply_from_context", "reply_from_model_knowledge", "use_supplied_evidence",
+        "ask_clarification", "acknowledge", "perform_safe_action",
+        "explain_capability_limit", "decline",
+    }
+    if plan["decision"] not in decisions:
+        raise LocalModelError("Deliberation stage returned an unsupported decision.")
+    _string_list(plan["steps"], "plan.steps", 6)
+    _string_list(plan["evidence_to_use"], "plan.evidence_to_use", 8)
+    _string_list(plan["uncertainties"], "plan.uncertainties", 8)
+    _string_list(plan["response_requirements"], "plan.response_requirements", 10)
+    return plan
 
 
 class NeuralDialogueCore:
@@ -394,7 +427,7 @@ class NeuralDialogueCore:
                 "latest_user_utterance": text,
                 "semantic_interpretation": frame,
             }
-            plan = self.client.complete_json(
+            plan = _validate_plan(self.client.complete_json(
                 [
                     {"role": "system", "content": DELIBERATOR_SYSTEM},
                     {"role": "user", "content": json.dumps(plan_input, ensure_ascii=False)},
@@ -402,13 +435,7 @@ class NeuralDialogueCore:
                 "mcrl_response_plan",
                 PLAN_SCHEMA,
                 max_tokens=500,
-            )
-            required_plan = {
-                "decision", "steps", "evidence_to_use", "uncertainties",
-                "response_requirements",
-            }
-            if set(plan) != required_plan:
-                raise LocalModelError("Deliberation stage returned an invalid plan shape.")
+            ))
 
         realization_input = {
             "recent_conversation": context,
