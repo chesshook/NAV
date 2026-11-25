@@ -21,6 +21,8 @@ class TurnRecord:
     addressee: str
     assistant_action: str
     outcome: str
+    user_text: str = ""
+    assistant_text: str = ""
 
 
 def _goal_for(moves: tuple[str, ...], intent: str) -> str:
@@ -59,7 +61,14 @@ class DialogueSituation:
     recent_turns: list[TurnRecord] = field(default_factory=list)
     history_limit: int = 12
 
-    def observe(self, graph: Any, assistant_action: str, outcome: str) -> None:
+    def observe(
+        self,
+        graph: Any,
+        assistant_action: str,
+        outcome: str,
+        user_text: str = "",
+        assistant_text: str = "",
+    ) -> None:
         """Commit one fully handled user turn to the situation state."""
         moves = tuple(getattr(graph, "speech_acts", ()) or (graph.speech_act,))
         self.turn_count += 1
@@ -72,8 +81,13 @@ class DialogueSituation:
         ]
         if topics:
             self.current_topic = topics[0]
-        # Absence of a topic does not erase the previous discourse referent.
-        # Identity/capability/social moves simply do not overwrite it.
+        elif any(move in {
+            "request.identity", "request.user_identity", "request.capability",
+            "request.conversation_summary", "request.perform_action", "request.action",
+        } for move in moves):
+            self.current_topic = ""
+        # Ordinary social turns preserve a referent, while a new explicit task
+        # changes the conversational focus even when it has no world-topic node.
         speaker_nodes = graph.edge_targets("speaker") if hasattr(graph, "edge_targets") else ()
         addressee_nodes = graph.edge_targets("addressee") if hasattr(graph, "edge_targets") else ()
         if speaker_nodes:
@@ -109,10 +123,18 @@ class DialogueSituation:
             addressee=self.last_addressee,
             assistant_action=assistant_action,
             outcome=outcome,
+            user_text=" ".join(str(user_text or "").split()),
+            assistant_text=" ".join(str(assistant_text or "").split()),
         ))
         self.recent_turns = self.recent_turns[-self.history_limit:]
 
-    def record_action(self, action: str, outcome: str) -> None:
+    def record_action(
+        self,
+        action: str,
+        outcome: str,
+        user_text: str = "",
+        assistant_text: str = "",
+    ) -> None:
         """Record a handled non-linguistic capability, such as arithmetic."""
         self.turn_count += 1
         self.active_goal = "execute_capability"
@@ -131,6 +153,8 @@ class DialogueSituation:
             addressee="assistant",
             assistant_action=action,
             outcome=outcome,
+            user_text=" ".join(str(user_text or "").split()),
+            assistant_text=" ".join(str(assistant_text or "").split()),
         ))
         self.recent_turns = self.recent_turns[-self.history_limit:]
 
@@ -156,6 +180,8 @@ class DialogueSituation:
                     "addressee": turn.addressee,
                     "assistant_action": turn.assistant_action,
                     "outcome": turn.outcome,
+                    "user_text": turn.user_text,
+                    "assistant_text": turn.assistant_text,
                 }
                 for turn in self.recent_turns
             ],
