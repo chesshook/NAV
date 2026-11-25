@@ -111,7 +111,7 @@ class SemanticCompositionTests(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "facts.jsonl"
-            source.write_text(json.dumps(record) + "\\n", encoding="utf-8")
+            source.write_text(json.dumps(record) + "\n", encoding="utf-8")
             imported = self.store.import_facts_jsonl(str(source), batch_size=1)
         self.assertEqual(imported, 1)
         found = self.store.search_facts(["venus"])
