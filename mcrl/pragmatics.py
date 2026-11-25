@@ -175,9 +175,17 @@ class PragmaticSignals:
     def prevents_topic_extraction(self, *, greeting: bool, wellbeing: bool,
                                   gratitude: bool, farewell: bool) -> bool:
         return bool(
-            self.identity_target or self.capability_target or self.compliment
+            self.identity_target or self.ambiguous_identity
+            or self.capability_target or self.compliment
             or greeting or wellbeing or gratitude or farewell
         )
+
+    def support_for(self, label: str, target: str = "") -> float:
+        matches = [
+            item.score for item in self.candidates
+            if item.label == label and (not target or item.target == target)
+        ]
+        return max(matches, default=0.0)
 
     def diagnostics(self) -> dict:
         return {
