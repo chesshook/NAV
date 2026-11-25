@@ -1,25 +1,22 @@
-"""Small discourse memory for grammatical reference resolution."""
+"""Bounded dialogue state with explicit topic updates and avoid-topic memory."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
 ASSISTANT_NAMES = {"mcr", "mcrl", "assistant", "chatgpt"}
-SECOND_PERSON = {"you", "u", "ya", "your", "yours"}
+SECOND_PERSON = {"you", "your", "yours"}
 FIRST_PERSON = {"i", "me", "my", "mine", "we", "us", "our"}
-ANAPHORS = {"it", "this", "that", "they", "them", "those", "these"}
 
 
 @dataclass
 class DiscourseState:
-    """Tracks turn roles and a small set of recent discourse referents.
-
-    This is bounded session memory, not a learned world model.
-    """
+    """Session-local conversational references; no global topic leakage."""
 
     turn_count: int = 0
     last_topic: str = ""
     last_speech_act: str = ""
     recent_entities: list[str] = field(default_factory=list)
+    avoided_topics: set[str] = field(default_factory=set)
     user_aliases: set[str] = field(default_factory=lambda: {"user"})
     assistant_aliases: set[str] = field(default_factory=lambda: set(ASSISTANT_NAMES))
 
@@ -32,34 +29,36 @@ class DiscourseState:
             return "assistant"
         if lowered in FIRST_PERSON or lowered in self.user_aliases:
             return "user"
-        if lowered in ANAPHORS:
-            return self.last_topic or None
-        return None
-
-    def observe_parse(self, words: tuple[str, ...], entities: tuple[str, ...]) -> None:
-        self.turn_count += 1
-        for entity in entities:
-            cleaned = str(entity).strip()
-            if cleaned and cleaned.lower() not in self.assistant_aliases and cleaned.lower() not in self.user_aliases:
-                self.last_topic = cleaned
-                self.recent_entities.append(cleaned)
-        self.recent_entities = self.recent_entities[-12:]
+        return self.last_topic or None
 
     def remember_topic(self, topic: str) -> None:
-        cleaned = str(topic or "").strip()
-        if cleaned:
-            self.last_topic = cleaned
+        cleaned = " ".join(str(topic or "").split()).strip()
+        if not cleaned:
+            return
+        self.last_topic = cleaned
+        if cleaned not in self.recent_entities:
             self.recent_entities.append(cleaned)
-            self.recent_entities = self.recent_entities[-12:]
+        self.recent_entities = self.recent_entities[-12:]
+
+    def avoid_topic(self, topic: str) -> None:
+        cleaned = " ".join(str(topic or "").lower().split()).strip()
+        if cleaned:
+            self.avoided_topics.add(cleaned)
+
+    def topic_is_avoided(self, topic: str) -> bool:
+        normalized = " ".join(str(topic or "").lower().split())
+        return bool(normalized and normalized in self.avoided_topics)
 
     def observe_graph(self, graph) -> None:
+        """Advance turn state, but only explicit topic nodes may replace context."""
+        self.turn_count += 1
         self.last_speech_act = graph.speech_act
-        resolved = [node.value for node in graph.nodes if node.concept == "topic.resolved"]
-        if resolved:
-            topics = resolved
-        else:
-            topics = [node.value for node in graph.nodes if node.kind in {"topic", "entity"}]
-        self.observe_parse(graph.tokens, tuple(topics))
+        resolved = [
+            node.value for node in graph.nodes
+            if node.concept in {"topic.target", "topic.resolved"}
+        ]
+        if resolved and graph.speech_act not in {"request.avoid_topic"}:
+            self.remember_topic(resolved[0])
 
     def snapshot(self) -> dict:
         return {
@@ -67,4 +66,5 @@ class DiscourseState:
             "last_topic": self.last_topic,
             "last_speech_act": self.last_speech_act,
             "recent_entities": self.recent_entities[-8:],
+            "avoided_topics": sorted(self.avoided_topics),
         }
