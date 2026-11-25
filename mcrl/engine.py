@@ -184,6 +184,7 @@ class MCRLanguageEngine:
             if facts:
                 composed = compose_topic_answer(topic, facts, topic_terms)
                 self.discourse.observe_graph(graph)
+                self.discourse.remember_topic(topic)
                 source_names = sorted({fact["source"] for fact in composed.selected_facts})
                 return Answer(
                     text=composed.text,
@@ -202,6 +203,7 @@ class MCRLanguageEngine:
 
             record, score, evidence = self._factual_candidate(graph)
             self.discourse.observe_graph(graph)
+            self.discourse.remember_topic(topic)
             if record is not None:
                 return Answer(
                     text=record["answer"].strip(),
