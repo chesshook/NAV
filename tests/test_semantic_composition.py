@@ -33,6 +33,7 @@ class SemanticCompositionTests(unittest.TestCase):
 
     def test_engine_does_not_preload_a_topic_knowledge_domain(self) -> None:
         self.assertEqual(self.store.fact_count(), 0)
+        self.assertEqual(self.store.count(), 0)
         result = self.engine.answer("What do you know about the Moon?")
         self.assertTrue(result.abstained)
         self.assertEqual(result.diagnostics["mode"], "unknown_topic_or_property")
