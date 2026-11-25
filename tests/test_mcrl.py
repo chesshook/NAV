@@ -33,8 +33,8 @@ class MCRLTests(unittest.TestCase):
             result = engine.answer("hi")
             self.assertFalse(result.abstained)
             self.assertEqual(result.diagnostics["intent"], "greeting")
-            self.assertEqual(result.diagnostics["mode"], "social_rule")
-            self.assertIn("MCR-L 0.1", result.text)
+            self.assertEqual(result.diagnostics["mode"], "semantic_composition")
+            self.assertEqual(result.text, "Hi!")
             self.assertEqual(engine.last_plan, None)
         finally:
             store.close()
