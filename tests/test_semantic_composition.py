@@ -12,6 +12,7 @@ from mcrl.knowledge import KnowledgeStore
 from mcrl.meaning_solver import solve_response
 from mcrl.meaning_validator import validate_response
 from mcrl.pragmatics import analyze_pragmatics
+from mcrl.interaction_composer import plan_interaction, summarize_session
 from mcrl.semantic_parser import parse_meaning
 from mcrl.sensitivity import calculate_sensitivity
 
@@ -458,6 +459,93 @@ class SemanticCompositionTests(unittest.TestCase):
         self.assertEqual(result.diagnostics["response_plan"]["act"], "answer_capability")
         self.assertIn("don't have a reliable swim capability", result.text.lower())
         self.assertIn("counterfactual_sensitivity", result.diagnostics["pragmatic_interpretation"]["candidates"][0])
+
+
+
+    def test_smile_request_is_an_action_not_a_factual_topic(self) -> None:
+        plan = plan_interaction("can u smile for me?")
+        self.assertIsNotNone(plan)
+        assert plan is not None
+        self.assertEqual(plan.operation, "perform_symbolic_action")
+        self.assertEqual(plan.action, "smile")
+        result = self.engine.answer("can u smile for me?")
+        self.assertEqual(result.text, "😊")
+        self.assertEqual(result.diagnostics["mode"], "interaction_composition")
+        self.assertNotEqual(result.diagnostics["situation"]["current_topic"].lower(), "smile")
+
+    def test_unknown_physical_action_is_not_misrouted_as_a_topic(self) -> None:
+        result = self.engine.answer("can you dance for me?")
+        self.assertFalse(result.abstained)
+        self.assertIn("can't physically dance", result.text.lower())
+        self.assertEqual(
+            result.diagnostics["interaction_plan"]["operation"],
+            "perform_symbolic_action",
+        )
+
+    def test_standalone_wowow_is_a_reaction_not_a_subject_lookup(self) -> None:
+        plan = plan_interaction("wowow")
+        self.assertIsNotNone(plan)
+        assert plan is not None
+        self.assertEqual(plan.operation, "acknowledge_interjection")
+        result = self.engine.answer("wowow")
+        self.assertEqual(result.diagnostics["mode"], "interaction_composition")
+        self.assertIn("what's going on", result.text.lower())
+        self.assertNotIn("Wowow", result.diagnostics.get("topic_answer", {}).get("topic", ""))
+
+    def test_explicit_speech_directive_overrides_embedded_identity_clause(self) -> None:
+        utterance = "dont tell me who are you, just say Helo"
+        plan = plan_interaction(utterance)
+        self.assertIsNotNone(plan)
+        assert plan is not None
+        self.assertEqual(plan.operation, "emit_user_requested_text")
+        self.assertEqual(plan.payload, "Helo")
+        self.assertIn("respect_negated_identity_disclosure", plan.constraints)
+        result = self.engine.answer(utterance)
+        self.assertEqual(result.text, "Helo")
+        self.assertEqual(result.diagnostics["mode"], "interaction_composition")
+        self.assertNotIn("MCR-L", result.text)
+
+    def test_direct_output_instruction_is_compositional_across_payloads(self) -> None:
+        examples = (
+            ('Please just say "Good morning".', "Good morning"),
+            ("Only say ready", "ready"),
+            ("Reply with I understand.", "I understand"),
+            ("answer with 42", "42"),
+        )
+        for utterance, expected in examples:
+            with self.subTest(utterance=utterance):
+                result = self.engine.answer(utterance)
+                self.assertEqual(result.text, expected)
+                self.assertEqual(result.diagnostics["mode"], "interaction_composition")
+
+    def test_conversation_summary_uses_actual_prior_session_messages(self) -> None:
+        self.engine.answer("Hi! How is it going?")
+        self.engine.answer("can u smile for me?")
+        self.engine.answer("Do you know what is a computer?")
+        result = self.engine.answer("what we talked till now?")
+        self.assertEqual(result.diagnostics["mode"], "interaction_composition")
+        self.assertIn("Hi! How is it going?", result.text)
+        self.assertIn("can u smile for me?", result.text)
+        self.assertIn("Do you know what is a computer?", result.text)
+        self.assertNotIn("what we talked till now?", result.text)
+
+    def test_history_summary_is_empty_when_session_has_no_previous_turns(self) -> None:
+        result = self.engine.answer("what have we talked about so far?")
+        self.assertIn("history is empty", result.text.lower())
+
+    def test_history_question_does_not_become_a_topic_named_talked(self) -> None:
+        plan = plan_interaction("what we talked till now?")
+        self.assertIsNotNone(plan)
+        assert plan is not None
+        self.assertEqual(plan.operation, "summarize_session_history")
+
+    def test_computer_definition_stays_a_knowledge_question_not_a_topic_guess(self) -> None:
+        result = self.engine.answer("do you know what is a computer?")
+        self.assertTrue(result.abstained)
+        self.assertEqual(result.diagnostics["mode"], "unknown_topic_or_property")
+        self.assertIn("Computer", result.text)
+        self.assertNotIn("Talked", result.text)
+        self.assertNotIn("Smile", result.text)
 
 
 if __name__ == "__main__":
