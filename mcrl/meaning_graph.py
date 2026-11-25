@@ -56,7 +56,13 @@ class SemanticGraph:
 
     @property
     def speech_act(self) -> str:
+        """Primary speech act retained for compatibility with single-act routes."""
         return self.first("speech_act", "statement")
+
+    @property
+    def speech_acts(self) -> tuple[str, ...]:
+        """All detected speech acts, including secondary moves in compound turns."""
+        return tuple(node.value for node in self.by_kind("speech_act"))
 
     @property
     def predicate(self) -> str:
