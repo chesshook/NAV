@@ -79,6 +79,7 @@ def _extract_expression(text: str) -> tuple[str, str] | None:
     lowered = " ".join((text or "").lower().split())
 
     natural_patterns = (
+        (rf"(?:(?:can|could|would)\s+(?:you|u)\s+)?(?:please\s+)?(?:sum|add)\s+{_NUMBER}\s+(?:and|plus)\s+{_NUMBER}", "addition"),
         (rf"(?:sum|add|addition)\s+of\s+{_NUMBER}\s+(?:and|plus)\s+{_NUMBER}", "addition"),
         (rf"(?:subtract|difference)\s+(?:of\s+)?{_NUMBER}\s+from\s+{_NUMBER}", "subtraction"),
         (rf"(?:product|multiply|multiplication)\s+(?:of\s+)?{_NUMBER}\s+(?:and|by|times)\s+{_NUMBER}", "multiplication"),
