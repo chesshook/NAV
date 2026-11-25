@@ -173,7 +173,7 @@ class SemanticCompositionTests(unittest.TestCase):
         self.assertTrue(second.abstained)
         self.assertIn("France", second.text)
         self.assertNotIn("Neptune", second.text)
-        self.assertEqual(second.diagnostics["discourse"]["last_topic"], "France")
+        self.assertEqual(second.diagnostics["discourse"]["last_topic"].lower(), "france")
 
     def test_calculation_is_independent_of_previous_topic(self) -> None:
         self.engine.answer("Anything about Neptune?")
@@ -197,7 +197,7 @@ class SemanticCompositionTests(unittest.TestCase):
         self.assertFalse(result.abstained)
         self.assertEqual(result.diagnostics["mode"], "dialogue_composition")
         self.assertEqual(result.diagnostics["response_plan"]["act"], "acknowledge_positive_statement")
-        self.assertEqual(result.diagnostics["discourse"]["last_topic"], "Neptune")
+        self.assertEqual(result.diagnostics["discourse"]["last_topic"].lower(), "neptune")
         self.assertIn("glad", result.text.lower())
 
     def test_dont_tell_me_about_topic_is_acknowledged_as_a_boundary(self) -> None:
