@@ -24,6 +24,13 @@ class SentenceAST:
             return " ".join(word for word in words if word).strip() + "!"
         if self.construction == "single_word_greeting":
             return (self.fixed_lexemes[0] if self.fixed_lexemes else "Hello") + "!"
+        if self.construction == "positive_acknowledgement":
+            return "Glad it helps! What should we tackle next?"
+        if self.construction == "empathetic_acknowledgement":
+            return "Ah, that sounds rough. Want to tell me what happened?"
+        if self.construction == "topic_avoidance_acknowledgement":
+            topic = self.fixed_lexemes[0] if self.fixed_lexemes else "that topic"
+            return f"Got it — I won’t bring up {topic} unless you ask."
         if self.construction == "presence_confirmation":
             return "Yes, I am here!"
         if self.construction == "gratitude_acknowledgement":
@@ -66,6 +73,15 @@ class GrammarEngine:
             return SentenceAST(
                 construction="single_word_greeting",
                 fixed_lexemes=(self.lexical.choose_greeting(source),),
+            )
+        if response.act == "acknowledge_positive_statement":
+            return SentenceAST(construction="positive_acknowledgement")
+        if response.act == "acknowledge_negative_statement":
+            return SentenceAST(construction="empathetic_acknowledgement")
+        if response.act == "acknowledge_topic_avoidance":
+            return SentenceAST(
+                construction="topic_avoidance_acknowledgement",
+                fixed_lexemes=(str(response.recipient).strip().title(),),
             )
         if response.act == "confirm_presence":
             return SentenceAST(construction="presence_confirmation")
