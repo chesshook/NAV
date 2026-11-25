@@ -76,7 +76,7 @@ def _render_fact(fact: dict, topic: str) -> str:
     if predicate == "surface_color_up_close":
         return "up close, much of its surface is made of dark-gray shades"
     if predicate == "light_source":
-        return "it does not make its own light; moonlight is sunlight reflected from its surface"
+        return "it shines by reflecting sunlight instead of making its own light"
     if predicate == "natural_satellite_of":
         return "it is Earth's natural satellite and orbits our planet"
     if predicate == "diameter_relative_to_earth":
@@ -120,7 +120,9 @@ def compose_topic_answer(
     elif len(clauses) == 2:
         body = clauses[0].rstrip(".") + ", and " + clauses[1]
     else:
-        body = clauses[0].rstrip(".") + "; " + clauses[1].rstrip(".") + "; and " + clauses[2]
+        body = clauses[0].rstrip(".") + "; " + clauses[1].rstrip(".") + "; and " + clauses[2].rstrip(".")
+    if body:
+        body = body[0].upper() + body[1:]
 
     # This is a transparent statement about the current curated index, not a
     # claim that the system has exhausted the subject or reached full expertise.
