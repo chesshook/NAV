@@ -76,6 +76,26 @@ The current dialogue solver has explicit operators for:
 
 Each operator defines required semantic effects; a grammar AST realizes the selected response meaning. This remains a bounded pragmatic recognizer, not a general language learner.
 
+## 4.1 Interactional pragmatics
+
+A single user turn can perform multiple moves. The graph retains the primary speech act and secondary acts rather than discarding all but the first. For example:
+
+\[
+\text{Hi! How is it going?}
+\rightarrow
+\{\text{social.greeting},\text{social.wellbeing}\}
+\]
+
+The separate pragmatic interpreter distinguishes:
+- assistant identity questions from user-identity questions;
+- ability checks from incomplete-topic clarification;
+- compliments from factual topic mentions;
+- social moves that coexist in one utterance.
+
+This prevents words such as "am" and "going" from being mistaken for factual topics. Answers about the user are bounded by what the user shared in the current conversation; the system does not claim independent identity knowledge.
+
+The response planner now handles compound greeting/wellbeing turns, compliments, identity questions, and supported or unsupported capability checks. These remain bounded constructions, not broad learned language understanding.
+
 ## 5. Safe arithmetic capability
 
 Natural-language arithmetic is first reduced to a small expression grammar. The expression is parsed into an AST. Only numeric constants, bounded unary operations, and whitelisted arithmetic operators are accepted. There is no call to eval, exec, attributes, function calls, imports, or arbitrary Python code. Magnitude, exponent, and division-by-zero checks are enforced.
