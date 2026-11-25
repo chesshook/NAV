@@ -105,6 +105,8 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
     negated = _has(words, NEGATION_WORDS)
     temporal = "before" if _has(words, BEFORE_WORDS) else "after" if _has(words, AFTER_WORDS) else "present" if _has(words, PRESENT_WORDS) else "unspecified"
     comparison = "more_than" if _has(words, MORE_WORDS) and "than" in words else "less_than" if _has(words, LESS_WORDS) and "than" in words else "none"
+    verb_position = next((index for index, word in enumerate(words) if word in VERBS), None)
+    main_verb = words[verb_position] if verb_position is not None else None
 
     if meeting and modifiers and not negated:
         speech_act = "social.pleasantry"
@@ -141,6 +143,9 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
     act_id = add(speech_act, "speech_act", speech_act.split(".")[-1])
     if meeting:
         event_id = add("event.meeting", "event", "meeting", next((w for w in words if w in MEETING_WORDS), "meet"))
+        builder.edge(act_id, event_id, "has_event")
+    elif main_verb is not None:
+        event_id = add(f"event.{VERBS[main_verb]}", "event", VERBS[main_verb], main_verb)
         builder.edge(act_id, event_id, "has_event")
     else:
         event_id = None
@@ -191,24 +196,34 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
         has_second_person = has_second_person or discourse.has_assistant_reference(words)
         mentions_assistant = mentions_assistant or discourse.has_assistant_reference(words)
 
-    user_id = add("entity.user", "participant", "user") if has_first_person or speech_act.startswith("social.") else None
+    user_id = add("entity.user", "participant", "user") if has_first_person or speech_act.startswith("social.") or speech_act == "request.action" else None
     assistant_id = add("entity.assistant", "participant", "assistant") if has_second_person or mentions_assistant or speech_act.startswith("social.") else None
     if event_id is not None:
-        if user_id is not None:
-            builder.edge(event_id, user_id, "speaker")
-        if assistant_id is not None:
-            builder.edge(event_id, assistant_id, "addressee")
+        if speech_act.startswith("social."):
+            if user_id is not None:
+                builder.edge(event_id, user_id, "speaker")
+            if assistant_id is not None:
+                builder.edge(event_id, assistant_id, "addressee")
+        elif verb_position is not None:
+            before_verb = words[:verb_position]
+            after_verb = words[verb_position + 1:]
+            if user_id is not None and any(word in FIRST_PERSON for word in before_verb):
+                builder.edge(event_id, user_id, "agent")
+            if assistant_id is not None and any(word in SECOND_PERSON or word in ASSISTANT_ALIASES for word in before_verb):
+                builder.edge(event_id, assistant_id, "agent")
+            if user_id is not None and any(word in FIRST_PERSON for word in after_verb):
+                builder.edge(event_id, user_id, "patient")
+            if assistant_id is not None and any(word in SECOND_PERSON or word in ASSISTANT_ALIASES for word in after_verb):
+                builder.edge(event_id, assistant_id, "patient")
+            if speech_act == "request.action" and user_id is not None and not before_verb:
+                builder.edge(event_id, user_id, "agent")
 
     # Store the explicit assistant alias as a reference, not as a topical noun.
     if mentions_assistant:
         add("entity.assistant", "entity", "MCR", "MCR")
 
-    for word in words:
-        if word in VERBS:
-            verb_id = add(f"event.{VERBS[word]}", "predicate", VERBS[word], word)
-            if event_id is None:
-                event_id = verb_id
-            break
+    if main_verb is not None:
+        add(f"predicate.{VERBS[main_verb]}", "predicate", VERBS[main_verb], main_verb)
 
     # Keep named surface entities and unresolved content as topic nodes.
     known = set(POSITIVE_MODIFIERS) | MEETING_WORDS | GREETING_WORDS | GRATITUDE_WORDS | FAREWELL_WORDS | NEGATION_WORDS | BEFORE_WORDS | AFTER_WORDS | PRESENT_WORDS | MORE_WORDS | LESS_WORDS | set(VERBS) | ASSISTANT_ALIASES | SECOND_PERSON | FIRST_PERSON
