@@ -1,82 +1,104 @@
-# MCR-L 0.1: mathematical specification
+# MCR-L 0.2: active mathematical specification
 
-This document describes the implemented prototype, not a claim of general intelligence.
+This document describes the semantic-composition branch. It distinguishes implemented formulas from research goals. It does not claim general intelligence.
 
-## 1. Semantic feature vector
+## 1. Typed meaning graph
 
-The parser maps an input string to a bounded vector:
+An utterance is mapped to:
 
 \[
-x_t \in [0,1]^N, \quad N=16
+G=(V,E,A)
 \]
 
-The dimensions are: question, define, explain, compare, how-to, entity, action, causality, temporal, negation, constraint, uncertainty, evidence, risk, context, follow-up.
+- \(V\): typed meaning nodes (speech act, event, participant, polarity, affect, time, comparison, topic).
+- \(E\): typed role edges (speaker, addressee, has-event, negates, temporal-scope, comparison).
+- \(A\): node attributes such as surface form and parser confidence.
 
-The current parser uses explicit English cue rules. It is intentionally inspectable and has limited coverage.
+The graph is the working representation. The original word sequence is retained as evidence for lexicalization and factual lookup, not used as the sole semantic representation.
 
-## 2. Recurrent situation update
+## 2. Counterfactual sensitivity
 
-The implemented recurrence is:
+The implementation computes a structural utility \(U(G)\) from represented node kinds and relation edges. For each node \(v_i\), it removes that node and its incident edges:
 
 \[
-a_{t+1}=\rho a_t+(1-\rho)\sigma(b+g_x x_t+g_w W^T a_t)
+S_i=\max(0,U(G)-U(G\setminus v_i))
 \]
 
-with:
-
-- \(\rho=0.56\), state retention;
-- \(g_x=3.45\), input gain;
-- \(g_w=1.15\), recurrent gain;
-- \(b=-1.45\), baseline bias;
-- \(\sigma(z)=1/(1+e^{-z})\);
-- activations clipped to \([0,1]\).
-
-The sparse signed matrix \(W\) contains hand-authored starter relationships. These are hypotheses to test, not discovered universal language laws.
-
-## 3. Evidence retrieval
-
-The knowledge store is SQLite. When FTS5 exists, a query is issued against a full-text index. Otherwise, the prototype uses SQL LIKE matching. JSONL ingestion is streaming and batched.
-
-The current implementation is lexical retrieval, not vector/embedding search. It does not claim to understand arbitrary paraphrases.
-
-## 4. Answer-plan score
-
-Each retrieved record receives:
+Then it normalizes:
 
 \[
-J(p)=0.40C+0.22T+0.14I+0.12E+0.12S
+w_i=\frac{S_i}{\sum_j S_j+\epsilon}
+\]
+
+where \(\epsilon\) prevents division by zero. If all losses are zero, the implementation assigns a uniform distribution over nodes.
+
+These weights indicate which represented components are structurally important to the current graph. They are not learned truths about human meaning; the category and edge weights are explicit engineering hypotheses.
+
+## 3. Response-meaning selection
+
+The response planner constructs semantic response candidates before the grammar engine selects words. Its candidate score is:
+
+\[
+J(R)=\sum_k W_k P_k(R)+T(R)+B(R)-M(R)
 \]
 
 where:
+- \(W_k\) is the aggregated sensitivity for a semantic kind;
+- \(P_k(R)\) is whether candidate \(R\) preserves that kind;
+- \(T(R)\) is task/pragmatic fit;
+- \(B(R)\) is a small candidate utility bias;
+- \(M(R)\) is a missing-requirement penalty.
 
-- \(C\): fraction of query content terms found in the record;
-- \(T\): fraction of query content terms found in the record title;
-- \(I\): intent compatibility;
-- \(E\): whether a source is recorded;
-- \(S\): mean recurrent activation for the record's tagged semantic features.
+For a positive meeting pleasantry, a reciprocal-meeting response preserves the event, positive affect, participant roles, and social act. A generic acknowledgement preserves fewer of those details and should therefore score lower.
 
-The score is a ranking heuristic, not a calibrated probability. The CLI's confidence value must not be interpreted as a statistical probability that the answer is true.
+## 4. Concept-local lexical selection
 
-## 5. Sensitivity
-
-For a selected plan score function \(J(a)\), the prototype computes finite differences:
-
-\[
-d_i=\frac{|J(a)-J(a-\epsilon e_i)|}{\epsilon}
-\]
-
-and normalizes the values to sum to one when their sum is nonzero. This reports which activations influence the current plan score. It does not prove that those signals are causally important in the real world.
-
-## 6. Feedback plasticity
-
-Only an explicit /good or /bad command invokes the bounded update:
+The lexical compiler does not rank every word in the vocabulary. It ranks candidates attached to one concept:
 
 \[
-\Delta W_{ij}=\eta r(a_i^- - 0.38)(a_j^+ - 0.38)-0.0002|W_{ij}|
+L^*=\arg\max_{\ell\in Lex(c)}
+(0.42P+0.22G+0.20R-0.16A+0.30Q)
 \]
 
-Weights are clipped to \([-0.48,1.18]\). The update is a toy online adaptation mechanism. In 0.1, weights live only in the current process and are not persisted or trained on a validated dataset.
+where:
+- \(P\): semantic precision;
+- \(G\): grammar fit;
+- \(R\): register fit;
+- \(A\): ambiguity penalty;
+- \(Q\): lexical reuse bonus when the input's modifier is a suitable output choice.
 
-## 7. What this does not solve
+The candidate set for the positive-meeting modifier is currently a short hand-authored list (nice, glad, pleased, delighted, happy). It is not a trained language model.
 
-The equations do not themselves supply the semantic features, facts, grounding, or evaluation criteria. Those are supplied by the parser, the curated database, source metadata, and tests. This release is a reproducible baseline for experimentation, not an established alternative to foundation models.
+## 5. Grammar and verification
+
+The grammar engine builds a small syntax AST from semantic roles and linearizes it. The result is parsed again. For each response plan, required semantic checks are evaluated:
+
+\[
+V(Y,R)=\frac{\text{passed required checks}}{\text{number of required checks}}
+\]
+
+A response is emitted as successful only when every current required check passes. This verifier is limited by the parser and check list; it cannot guarantee that a sentence is correct in every broader linguistic context.
+
+## 6. Separate factual evidence score
+
+Factual questions use the disk-backed knowledge store only as a candidate generator. For candidate record \(d\):
+
+\[
+E(d)=0.72C+0.18T+0.10S
+\]
+
+- \(C\): fraction of distinct query content terms appearing in record title/text/answer/keywords/tags;
+- \(T\): fraction of query content terms appearing in the title;
+- \(S\): 1 when a source is recorded, otherwise 0.
+
+The candidate must also have at least 0.70 term coverage, a non-empty source, a non-empty answer, and an overall score at or above the configured threshold. This is a heuristic gate, not a probability calibration or full entailment checker.
+
+## 7. Legacy 0.1 mechanisms
+
+The 0.1 recurrent feature vector, evidence-plan score, and finite-difference score sensitivity are retained in older modules for comparison, but they are not on the 0.2 active answer path. The current active sensitivity is counterfactual ablation of meaning-graph nodes.
+
+## 8. What remains unsolved
+
+The formulas do not produce concepts, grammar, grounding, or truth criteria by themselves. This branch still needs wider lexical coverage, morphology, robust syntactic role assignment, entity linking, reference resolution, compositional operators, typed factual relations, contradiction checks, and held-out evaluation.
+
+A GPU-free runtime is a hardware constraint—not an accuracy or intelligence benchmark.

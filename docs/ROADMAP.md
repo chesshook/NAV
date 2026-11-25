@@ -1,52 +1,52 @@
 # MCR-L roadmap
 
-## 0.1 — CPU-first baseline (current)
-- [x] Explicit 16-dimensional semantic feature parser.
-- [x] Recurrent bounded activation state.
-- [x] Inspectable signed connection matrix.
-- [x] SQLite store with optional FTS5.
-- [x] Streaming JSONL importer.
-- [x] Evidence-aware answer-plan scoring and abstention.
-- [x] Controlled answer realization from retrieved records.
-- [x] Deterministic handling for basic greetings, thanks, farewells, and identity questions.
-- [x] Unit tests and CPU benchmark harness.
-- [ ] Persist per-conversation state and feedback weights.
-- [ ] CI validation on Windows, Linux, and macOS.
+## 0.2 — Semantic-composition foundation (current branch)
+- [x] Typed meaning graph with nodes and semantic-role edges.
+- [x] Bounded discourse state for speaker/addressee roles and recent referents.
+- [x] Counterfactual node-ablation sensitivity and normalized importance weights.
+- [x] Response meaning selection before lexical realization.
+- [x] Concept-local lexical candidate ranking.
+- [x] Grammar AST and deterministic linearization for an initial speech-act slice.
+- [x] Back-parsing checks for response meaning preservation.
+- [x] Separate evidence-gated factual lookup path.
+- [x] Bare wh-word fragments are classified as clarification requests, not unsupported factual questions.
+- [x] Regression tests for paraphrase equivalence, negation, temporal/comparative node extraction, evidence gating, and social composition.
+- [ ] Broader grammatical parsing and semantic-role assignment for ordinary clauses.
+- [ ] Persistent discourse state with explicit privacy/reset controls.
+- [ ] Better morphology, spelling normalization, multiword lexemes, and ambiguity handling.
 
-## 0.2 — Better semantic coverage
-- Add a controlled ontology and multiword concept aliases.
-- Add morphology, spelling normalization, entity spans, and coreference.
-- Add relationship extraction with explicit provenance.
-- Add separate lexical retrieval and semantic-graph traversal.
-- Add contradiction detection and source/date/confidence handling.
-- Build a labelled evaluation set with paraphrases and adversarial negatives.
+## 0.3 — Compositional operators
+- [ ] Typed event frames with subject, object, instrument, location, cause, and recipient roles.
+- [ ] Logical operators for conjunction, disjunction, implication, quantifiers, and conditionals.
+- [ ] Negation scope and temporal ordering that can be reasoned over, not merely detected.
+- [ ] Comparatives and quantities with unit-aware constraints.
+- [ ] Reference resolution across multiple turns and explicit correction handling.
+- [ ] Domain ontology and concept-to-concept relation traversal.
+- [ ] Evidence attribution and contradiction detection.
 
-## 0.3 — Compositional reasoning
-- Represent facts as typed relations rather than only prose passages.
-- Add deterministic rule execution for arithmetic, units, dates, and constraints.
-- Build multi-hop answer plans with traceable evidence paths.
-- Add counterexample generation and plan verification.
-- Add domain-specific grammar/realization rules.
+## 0.4 — Knowledge and learning
+- [ ] Curated and licensed concept/lexeme/grammar database with provenance.
+- [ ] Streaming corpus compiler that builds indexed semantic records rather than treating raw prose as intelligence.
+- [ ] Reviewed semantic examples with train/validation/test splits.
+- [ ] Learn lexical and structural weights from held-out examples; do not hand-tune against the test set.
+- [ ] Confidence calibration against measured accuracy.
+- [ ] Evaluate memory updates for drift, poisoning, and catastrophic interference.
 
-## 0.4 — Learning and calibration
-- Learn feature weights from a reviewed dataset, with train/validation/test splits.
-- Calibrate confidence against observed correctness; do not call raw ranking scores probabilities.
-- Evaluate memory updates for drift, poisoning, and catastrophic interference.
-- Persist state with explicit versioning and rollback.
-
-## 1.0 — Only after evidence
-- Broader domain coverage and multilingual support.
-- Stronger semantic parsing and reference resolution.
-- Independent evaluation against rule-based, retrieval-based, and small CPU neural baselines.
-- Publish latency, memory, energy, accuracy, abstention, and failure-rate measurements.
+## 0.5 — Broader language coverage
+- [ ] Clause composition and discourse relations across supported domains.
+- [ ] Multi-hop evidence-backed reasoning over typed relations.
+- [ ] More grammar constructions and varied surface realizations.
+- [ ] Independent evaluation against rule-based, retrieval, and small CPU neural baselines.
+- [ ] Multilingual support only after the English pipeline is measurable.
 
 ## Acceptance gates
-A version is not promoted because it sounds intelligent. It must pass:
-1. Held-out paraphrase tests.
-2. Unsupported-question abstention tests.
-3. Contradiction and negation tests.
-4. Evidence attribution checks.
-5. Reproducible CPU/RAM/latency benchmarks.
-6. Regression tests across each supported language/domain.
+A milestone is not promoted because a few examples sound natural. It must pass:
+1. Held-out paraphrase tests where unseen surface forms map to the same meaning.
+2. Negation-scope, temporal-order, and comparative-relation tests.
+3. Unsupported-question abstention tests.
+4. Meaning-preservation tests that catch omitted or reversed roles.
+5. Evidence attribution and contradiction checks.
+6. Reproducible CPU/RAM/latency/energy measurements.
+7. Regression tests across all supported grammar constructions.
 
-A GPU-free runtime is a hardware property, not an intelligence benchmark.
+The long-term objective remains CPU-first semantic composition. The current implementation is only the initial, narrow vertical slice needed to test that design.

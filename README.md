@@ -1,67 +1,87 @@
 # MCR-L
 ## Mathematical Cognitive Resonance for Language
 
-MCR-L is an experimental, CPU-first, symbolic/structured language-reasoning prototype inspired by the recurrent situation model in SCENT-X MCR-2.
+MCR-L 0.2 is an experimental CPU-first semantic-composition engine inspired by the explicit situation signals and recurrent-state ideas in SCENT-X MCR-2.
 
-**It is not a trained foundation model and does not claim ChatGPT-level generality.** The first release tests a narrower hypothesis: a local system can parse a bounded set of intents, activate explicit semantic signals, retrieve indexed evidence, score structured answer plans, and realize answers with grammar templates—without loading a neural language model or requiring a GPU.
+This branch is a **research prototype**, not a general-purpose conversational model. It does not load a neural language model, does not require a GPU, and uses only the Python standard library. Its current grammar and semantic ontology are deliberately bounded.
 
-## Goals
+## What changed from 0.1
 
-- Run on ordinary CPU-only laptops with the Python standard library.
-- Keep the language/knowledge store on disk and retrieve indexed records rather than load a multi-gigabyte corpus into RAM.
-- Separate parsing, state estimation, evidence retrieval, answer planning, verification, and wording.
-- Abstain when evidence is missing rather than invent facts.
-- Make every score and signal inspectable.
-- Provide a documented import path for larger JSONL corpora.
+MCR-L 0.1 was retrieval-led: it searched for a stored answer and calculated sensitivity after selecting that answer. That was the wrong foundation for the intended experiment.
 
-## Important limits
+MCR-L 0.2 separates two different tasks:
 
-This architecture avoids neural-network inference and GPU requirements in this prototype; it does not eliminate computation. It uses explicit rules and indexed retrieval, so performance and coverage are bounded by the grammar, concepts, and knowledge supplied. A 2–3 GB text corpus is not automatically a knowledge base: it needs provenance, chunking, metadata, indexing, and quality control. The project does not claim that mathematical formulas alone solve open-domain language understanding.
+- **Language composition:** parse an utterance into a typed meaning graph; measure the counterfactual importance of its nodes; solve for a response meaning; choose words from concept-local lexical candidates; build a grammar structure; and back-parse the result to verify meaning preservation.
+- **Factual answering:** use the local index only to find possible evidence, then require multi-term coverage and source metadata before returning a stored factual answer.
+
+The language-composition path does not retrieve a canned sentence for each input.
+
+## Active response pipeline
+
+\[
+\text{utterance}\rightarrow G(V,E,A)\rightarrow S_i,w_i
+\rightarrow R^*\rightarrow \text{syntax AST}\rightarrow \text{verification}
+\]
+
+1. **Meaning graph** — typed nodes represent speech acts, events, participants, polarity, affect, temporal relations, comparisons, and topics. Edges represent roles such as speaker, addressee, event, negation, and time scope.
+2. **Discourse state** — keeps bounded session-level speaker/addressee roles and recent referents.
+3. **Counterfactual sensitivity** — removes each meaning node in turn, measures the loss in graph utility, and normalizes the losses. High-sensitivity meaning must be preserved.
+4. **Response meaning solver** — scores a small set of pragmatic response operators against the weighted meaning, before selecting any output words.
+5. **Lexical compiler** — considers only words attached to the selected concept, scoring semantic precision, grammar fit, register, ambiguity, and lexical reuse.
+6. **Grammar engine** — builds a small syntax AST and linearizes it into a sentence.
+7. **Meaning validator** — parses the generated sentence again and checks whether key semantic requirements survived.
+8. **Evidence path** — factual questions use SQLite FTS5, where available, only as a candidate lookup accelerator. The candidate must pass a separate coverage/source gate.
+
+## First supported composition slice
+
+The initial rules cover basic greetings, gratitude, farewells, wellbeing questions, identity questions, and positive meeting pleasantries. For example:
+
+    you> Nice to meet u MCR
+    MCR-L: Nice to meet you too!
+
+The response is assembled from:
+- positive meeting meaning,
+- user as speaker,
+- assistant as addressee,
+- reciprocal social intent,
+- a grammar construction for an adjective + infinitive + object + reciprocal marker.
+
+This is a narrow, explicit grammar—not proof that the engine understands arbitrary English. The parser also extracts negation, temporal, and comparative nodes, but extraction alone does not mean the system can yet reason correctly about every such relation.
+
+The initial rules cover basic greetings, gratitude, farewells, wellbeing questions, identity questions, and positive meeting pleasantries.
+
+Bare, incomplete wh-questions such as `what?` are treated as clarification requests rather than factual queries with no evidence. They should prompt the user for the missing topic, while complete factual questions continue through the evidence gate.
 
 ## Quick start
 
 Requires Python 3.10+; no third-party packages.
 
-```bash
-python -m mcrl "What is MCR-L?"
-python -m mcrl --interactive
-# Basic greetings, thanks, farewells, and identity questions are handled locally.
-python -m pip install -e .  # optional: install the mcrl command
-python -m unittest discover -s tests -v
-```
+    python -m mcrl --interactive
+    python -m mcrl --interactive --debug
+    python -m mcrl "Nice to meet u MCR" --debug
+    python -m unittest discover -s tests -v
 
-On Windows, the same commands work in PowerShell or CMD when `python` is on PATH.
+On Windows, run these from the repository root in PowerShell or CMD.
 
-## Architecture
-
-1. **Lexical parser** — normalizes text and extracts known terms, entities, and intent cues.
-2. **Situation state** — updates a recurrent vector using a bounded sigmoid recurrence and an explicit signed relationship matrix.
-3. **Retriever** — uses SQLite FTS5 when available; a deterministic in-memory fallback is included for the tiny starter knowledge base.
-4. **Planner** — scores evidence-backed answer plans against intent, coverage, support, contradiction, and uncertainty.
-5. **Verifier** — rejects plans below a confidence threshold or lacking support.
-6. **Realizer** — fills controlled templates from the selected plan; it does not predict the next token.
-
-## Add knowledge
+## Add sourced factual knowledge
 
 Create UTF-8 JSON Lines records, one per line:
 
-```json
-{"id":"ram-001","title":"What is RAM?","text":"RAM is short-term working memory used by a computer while programs run.","answer":"RAM is the computer's short-term working memory. It holds data and instructions that active programs need quickly.","domain":"computing","source":"Your vetted reference","keywords":["RAM","memory"]}
-```
+    {"id":"ram-001","title":"What is RAM?","text":"RAM is short-term working memory used by a computer while programs run.","answer":"RAM is the computer's short-term working memory. It holds data and instructions that active programs need quickly.","domain":"computing","source":"Your vetted reference","keywords":["RAM","memory"]}
 
 Import them:
 
-```bash
-python -m mcrl --db data/knowledge.sqlite --import-jsonl path/to/records.jsonl
-python -m mcrl --db data/knowledge.sqlite "What is RAM?"
-```
+    python -m mcrl --db data/knowledge.sqlite --import-jsonl path/to/records.jsonl
+    python -m mcrl --db data/knowledge.sqlite "What is RAM?"
 
-The SQLite database is built locally and can be large without being fully loaded into memory. Do not ingest copyrighted books or personal data unless you have the rights and a lawful basis to do so. Store source and license metadata.
+JSONL ingestion is streamed in batches. The SQLite database can be larger than available RAM because it is not loaded as a single in-memory object. A 2–3 GB text collection is not automatically a useful semantic knowledge base: it needs clean records, ontology links, provenance, rights/licence metadata, and evaluation.
 
-## Project status
+## Measurement and limitations
 
-MCR-L 0.1 is a deliberately small research baseline. It should be evaluated against a fixed question set before adding more mechanisms. See `docs/ROADMAP.md` and `docs/FORMULAS.md`.
+- The printed semantic-composition score is a **meaning-preservation ratio**, not a probability of intelligence or truth.
+- The factual path score is a ranking heuristic, not a calibrated probability.
+- There is no broad open-domain semantic parser, learned ontology, multilingual grammar, multi-hop fact reasoner, or validated online learning in this milestone.
+- The implementation does not eliminate computation or brute force in every possible form. It avoids vocabulary-wide next-token generation; concept-local lexical choice is still a finite candidate selection.
+- Hand-authored concepts/rules are the current coverage ceiling. Unknown constructions should abstain rather than be disguised as understanding.
 
-## License
-
-MIT. See `LICENSE`.
+See docs/FORMULAS.md for the active equations and docs/ROADMAP.md for acceptance gates.

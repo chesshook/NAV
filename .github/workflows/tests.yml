@@ -2,9 +2,9 @@ name: MCR-L tests
 
 on:
   push:
-    branches: ["main", "mcrl-v0.1"]
+    branches: ["main", "mcrl-v0.1", "semantic-composition-v0.2"]
   pull_request:
-    branches: ["main"]
+    branches: ["main", "mcrl-v0.1"]
 
 jobs:
   test:
