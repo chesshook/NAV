@@ -31,6 +31,8 @@ class MCRLanguageEngine:
     def __init__(self, store: KnowledgeStore, minimum_evidence: float = 0.68) -> None:
         self.store = store
         self.minimum_evidence = minimum_evidence
+        self.minimum_score = minimum_evidence  # compatibility name; this is not a calibrated probability
+        self.last_plan = None  # retained for callers of the 0.1 API
         self.discourse = DiscourseState()
         self.grammar = GrammarEngine()
 
@@ -43,11 +45,11 @@ class MCRLanguageEngine:
             " ".join(record.get("keywords", [])),
             " ".join(record.get("tags", [])),
         ]
-        return set(re.findall(r"[a-z0-9]+", " ".join(fields).lower()))
+        return set(re.findall(r"[a-z0-9]+(?:[-\u0027][a-z0-9]+)*", " ".join(fields).lower()))
 
     def _factual_candidate(self, graph):
         query_terms = set(graph.lexical_tokens)
-        if len(query_terms) < 2:
+        if len(query_terms) < 1:
             return None, 0.0, {"reason": "not enough distinct content terms"}
 
         records = self.store.search(" ".join(sorted(query_terms)), limit=80)
@@ -57,6 +59,8 @@ class MCRLanguageEngine:
             title_terms = set(re.findall(r"[a-z0-9]+", record.get("title", "").lower()))
             coverage = len(query_terms & record_terms) / max(1, len(query_terms))
             title_coverage = len(query_terms & title_terms) / max(1, len(query_terms))
+            if len(query_terms) == 1 and title_coverage < 1.0:
+                continue
             source_quality = 1.0 if record.get("source") else 0.0
             score = 0.72 * coverage + 0.18 * title_coverage + 0.10 * source_quality
             ranked.append((score, coverage, record))
@@ -114,6 +118,7 @@ class MCRLanguageEngine:
                 source="MCR-L semantic composition and grammar rules",
                 diagnostics={
                     "mode": "semantic_composition",
+                    "intent": graph.speech_act.split(".")[-1],
                     "graph": graph.summary(),
                     "sensitivity": sensitivity.diagnostics(),
                     "response_plan": {
