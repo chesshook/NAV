@@ -1,36 +1,31 @@
 # MCR-L
 ## Mathematical Cognitive Resonance for Language
 
-MCR-L 0.3 is an experimental CPU-first semantic-composition engine inspired by the explicit situation signals and recurrent-state ideas in SCENT-X MCR-2.
+MCR-L 0.4 is an experimental CPU-first, meaning-first conversational system. It uses typed semantic representations, response planning, a small grammar engine, optional sourced facts, and a safe arithmetic capability. It uses the Python standard library and does not require a dedicated GPU.
 
-This branch is a bounded research prototype, not a general-purpose conversational model. It uses the Python standard library, requires no dedicated GPU, and does not load a neural language model. Its grammar and curated fact base are deliberately small.
+It is **not** a general-purpose language model and does not claim complete or human-level understanding. This milestone focuses on a foundation: the current message must determine what the system is responding to. A stale topic or an unrelated database hit must never hijack the answer.
 
-## What the engine does
+## Design separation
 
-MCR-L separates three different jobs:
+MCR-L separates four responsibilities:
 
-1. Understand the form of a message: compose typed meaning nodes for speech acts, events, participants, polarity, modifiers, time, comparisons, and topic references.
-2. Choose a response meaning: calculate counterfactual importance for represented meaning nodes, then select a pragmatic response plan before choosing output words.
-3. Answer about the world: retrieve source-attributed atomic facts or vetted document records. Compose only what the local store supports, and admit when it has no reliable information.
+1. **Dialogue understanding:** infer the communicative purpose of the current utterance (greeting, presence check, appreciation, request, topic question, topic boundary, and so on).
+2. **Response framing:** decide whether to answer, acknowledge, clarify, calculate, ask a follow-up, or admit that relevant knowledge is missing.
+3. **Optional world knowledge:** use only explicitly imported, source-attributed documents or atomic facts. No subject domain is silently preloaded.
+4. **Surface realization:** build a response from the selected response meaning, lexical choices, and a grammar construction.
 
-The active response path is:
+The dialogue path remains:
 
 \[
 \text{utterance}\rightarrow G(V,E,A)\rightarrow S_i,w_i
 \rightarrow R^*\rightarrow \text{syntax AST}\rightarrow \text{verification}
 \]
 
-The factual topic path is:
-
-\[
-\text{topic request}\rightarrow \text{fact candidates}
-\rightarrow \text{source/priority selection}
-\rightarrow \text{epistemic response plan}\rightarrow \text{wording}
-\]
+A separate safe arithmetic route handles explicit numeric expressions without consulting subject knowledge.
 
 ## Examples
 
-The current conversational grammar supports these examples:
+The current bounded conversational grammar includes:
 
     you> Hello there
     MCR-L: Hello there!
@@ -41,94 +36,110 @@ The current conversational grammar supports these examples:
     you> Nice to meet u MCR
     MCR-L: Nice to meet you too!
 
-The topic responder currently has a small, sourced Moon knowledge set. For example:
+    you> thats great
+    MCR-L: Glad it helps! What should we tackle next?
 
-    you> Tell me about the Moon
-    MCR-L: Hmm, I only have a few sourced basics about the Moon so far,
-    but here's what I do know: It often looks bright, almost white, from Earth;
-    up close, much of its surface is made of dark-gray shades; and it shines
-    by reflecting sunlight instead of making its own light. LOL.
+    you> dont tell me anything about moon
+    MCR-L: Got it — I won’t bring up Moon unless you ask.
 
-    you> Is it big?
-    MCR-L: Hmm, I only have a few sourced basics about the Moon so far,
-    but here's what I do know: It is about one-quarter as wide as Earth. LOL.
+A supported arithmetic expression is evaluated independently:
 
-Those statements come from individual NASA-attributed facts. The answer deliberately distinguishes the Moon's bright, almost-white appearance from Earth from its mostly gray surface up close. It also states that moonlight is reflected sunlight.
+    you> Can u tell me the value of sum of 4 and 5?
+    MCR-L: 4 + 5 = 9.
 
-For a topic with no fact or vetted document in the local store, MCR-L says so instead of inventing an answer:
+The evaluator accepts only numeric literals and a short whitelist of arithmetic AST operations. It never uses Python eval or exec.
 
-    you> Anything about Neptune?
-    MCR-L: Hmm, I don't have reliable facts about Neptune in my local
-    knowledge yet, so I don't want to make something up. LOL.
+## Knowledge is optional, not the personality
 
-This is not evidence of open-domain understanding. It is a narrow, inspectable system for testing semantic composition and honest use of a small fact base.
+A clean MCR-L engine starts with **zero domain facts and zero demo documents**. It does not automatically load the Moon sample or project/computing demo documents.
 
-## Active architecture
+With no source-backed knowledge imported:
 
-1. Meaning graph — typed nodes represent speech acts, events, participants, polarity, affect, time, comparisons, and topics. Edges represent semantic roles such as speaker, addressee, asker, target, agent, patient, negation, and event membership.
-2. Discourse state — keeps a bounded session topic so a simple follow-up such as “Is it big?” can resolve “it” to the last topic.
-3. Counterfactual sensitivity — removes each meaning node in turn, measures the loss in structural utility, and normalizes those losses.
-4. Response meaning solver — chooses a small pragmatic response plan before output words are selected.
-5. Lexical compiler and grammar AST — select concept-local wording and linearize a grammar structure. This is not vocabulary-wide next-token generation.
-6. Meaning validator — re-parses supported outputs and checks task-specific meaning requirements.
-7. Atomic fact store — SQLite stores subject-predicate-object records with aliases, confidence, epistemic status, priority, source, URL, and tags. FTS5 is used when available, with a SQL fallback.
-8. Topic responder — selects supported facts for the type of question (for example, color versus size) and composes a limited answer. If no source-backed fact exists, it admits that.
-9. Document evidence path — longer factual explanations can still use the existing disk-backed document index and strict term-coverage/source checks.
+    you> What do you know about the Moon?
+    MCR-L: Hmm, I don't know enough about Moon to give you a reliable answer yet.
+    I don't want to bluff or make something up. Ask me about a specific angle
+    and I'll tell you what I can support.
+
+A property-specific question must not be answered with an unrelated fact about the same subject:
+
+    you> How far is the Moon from Earth?
+    MCR-L: Hmm, I don't have a reliable distance fact for Moon Earth yet.
+    I don't want to bluff or swap in an unrelated fact.
+
+This is the intended behavior when MCR-L has no knowledge of the requested detail. The engine does not need a Moon fact to understand that the question asks about a distance.
+
+### Import knowledge only when deliberately requested
+
+A JSONL fact file can be imported explicitly:
+
+    python -m mcrl --db data/knowledge.sqlite --import-facts-jsonl facts.jsonl
+
+A fact record contains an id, subject, predicate, and object; optional aliases and tags; confidence metadata and epistemic status; and a source name and URL.
+
+For example:
+
+    {"id":"example-001","subject":"Example topic","aliases":["example"],"predicate":"definition","object":"A source-backed sentence about the topic.","confidence":0.95,"epistemic_status":"qualified","priority":20,"source":"A vetted source","source_url":"https://example.org/source","tags":["definition"]}
+
+The knowledge store filters candidates by the explicit subject/alias and, for property questions, by an allowed predicate. A color question cannot be answered by returning a size fact. A distance question cannot be answered by returning an unrelated color fact. If no matching record exists, the engine admits that.
+
+The small mcrl/data/facts.jsonl and mcrl/data/seed.jsonl files are optional demonstration material. They are not loaded automatically. Demo documents can be loaded only with --load-demo-documents.
+
+## Topic isolation and dialogue state
+
+- The last topic changes only when the parser creates an explicit topic target or a correctly resolved anaphor.
+- Generic words such as “great”, “tell”, “value”, or “sum” are not saved as topics.
+- A new explicit topic replaces the previous one.
+- A follow-up such as “Is it big?” can use the previous topic because it contains a pronoun in a question construction.
+- A new arithmetic request bypasses topic retrieval entirely.
+- Topic requests are checked against the current utterance; an old topic is never added just because it was recently discussed.
+
+## Safe arithmetic
+
+Supported examples include:
+
+    python -m mcrl "What is the sum of 4 and 5?"
+    python -m mcrl "What is 12 * 7?"
+
+The calculator parses a numeric expression into a Python AST and evaluates only approved constants, unary operators, and arithmetic operators. It applies magnitude and exponent bounds. Unsupported expressions are not executed.
 
 ## Quick start
 
 Requires Python 3.10+; no third-party packages.
 
-    git switch semantic-composition-v0.3
-    python -m mcrl --interactive
-    python -m mcrl --interactive --debug
-    python -m mcrl "Tell me about the Moon" --debug
-    python -m unittest discover -s tests -v
+    git switch semantic-composition-v0.4
+    py -3 -m mcrl --interactive
+    py -3 -m mcrl --interactive --debug
+    py -3 -m mcrl "Can u tell me the value of sum of 4 and 5?"
+    py -3 -m unittest discover -s tests -v
 
 On Windows, run these commands from the repository root in PowerShell or CMD.
 
-## Add sourced knowledge
+### Optional demo material
 
-### Add a document record
+To explicitly load the small project/computing document set for one run:
 
-Document JSONL remains useful for longer vetted passages:
+    py -3 -m mcrl --load-demo-documents --interactive
 
-    {"id":"ram-001","title":"What is RAM?","text":"RAM is short-term working memory used by a computer while programs run.","answer":"RAM is the computer's short-term working memory.","domain":"computing","source":"Your vetted reference","licence":"CC BY 4.0","keywords":["RAM","memory"]}
+To persist and use custom documents:
 
-Import it:
+    py -3 -m mcrl --db data/knowledge.sqlite --import-jsonl records.jsonl
+    py -3 -m mcrl --db data/knowledge.sqlite --interactive
 
-    python -m mcrl --db data/knowledge.sqlite --import-jsonl path/to/records.jsonl
+To persist and use custom atomic facts:
 
-### Add an atomic semantic fact
+    py -3 -m mcrl --db data/knowledge.sqlite --import-facts-jsonl facts.jsonl
+    py -3 -m mcrl --db data/knowledge.sqlite --interactive
 
-Facts should be small claims with explicit provenance. Each JSONL line is an object:
-
-    {"id":"moon-radius","subject":"Moon","aliases":["lunar","Earth's Moon"],"predicate":"radius","object":"The Moon's mean radius is about 1,737 kilometres.","confidence":1.0,"epistemic_status":"established","priority":50,"source":"Your trusted reference","source_url":"https://example.org/source","tags":["astronomy","size"]}
-
-Required fields are id, subject, predicate, object, source, and source_url. Confidence must be between 0 and 1. Epistemic status must be established, qualified, or tentative. Keep source and confidence labels honest; they are metadata, not automatically calibrated probabilities.
-
-Import facts:
-
-    python -m mcrl --db data/knowledge.sqlite --import-facts-jsonl path/to/facts.jsonl
-
-Both imports are streamed in batches. The database is disk-backed and is not loaded as a single in-memory object. The built-in mcrl/data/facts.jsonl Moon facts are loaded idempotently when the engine starts.
-
-### Current built-in fact sources
-
-- NASA Science, Moonlight — What Color is the Moon? https://science.nasa.gov/moon/moonlight/
-- NASA Science, Five Things to Know about the Moon https://science.nasa.gov/solar-system/moon/five-things-to-know-about-the-moon/
-
-The current built-in Moon set covers apparent color, surface color, reflected sunlight, natural-satellite status, and approximate size relative to Earth.
+Both JSONL import paths stream in batches into SQLite. The database is disk-backed and is not loaded as one large in-memory object.
 
 ## Measurement and limitations
 
-- The printed meaning-preservation value is a ratio of passed, hand-authored checks. It is not a probability of truth or intelligence.
-- The printed fact-support value is the minimum confidence metadata of the selected fact records. It is not statistically calibrated.
-- The facts are manually curated and sourced; the system does not autonomously research or verify new facts at runtime.
-- The parser recognizes a bounded set of constructions. It does not yet provide broad English syntax, general semantic role labeling, arbitrary coreference, or full negation/tense scope.
-- Topic selection uses an explicit alias/tag index and small question-property mappings. It does not infer all possible relations from raw text.
-- Unknown topics should abstain rather than receive plausible-sounding filler.
-- A 2–3 GB text collection is not automatically a useful semantic knowledge base: it needs segmentation, atomic facts, provenance, licences, ontology links, indexing, and evaluation.
-- The implementation avoids vocabulary-wide next-token generation; concept-local lexical choice and fact retrieval are still finite computations.
+- The meaning-check value is a ratio of hand-authored verification checks. It is not a probability of truth or intelligence.
+- The source-confidence-metadata value is the minimum confidence metadata of selected facts. It is not statistically calibrated.
+- The arithmetic evaluator is a bounded capability, not general mathematical reasoning.
+- The parser recognizes a limited set of English constructions. It does not yet provide broad syntax, general semantic role labeling, unrestricted coreference, or full negation/tense scope.
+- The response planner has a finite set of supported dialogue acts. Unsupported constructions should trigger an honest clarification or limitation, not an invented interpretation.
+- The system does not autonomously research, learn, or verify facts from arbitrary raw text.
+- No fixed rule system can honestly promise 101% understanding of every possible utterance. The acceptance target is measurable generalization to held-out paraphrases, role reversals, question types, discourse contexts, and unknown-topic cases.
 
-The objective remains CPU-first semantic composition. The current milestone is a narrow vertical slice, not a completed general language AI.
+The aim remains CPU-first, meaning-first language composition: understand the current utterance, determine what response it calls for, use evidence only when it is relevant, and be explicit about what is not known.

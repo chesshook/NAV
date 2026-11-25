@@ -44,6 +44,25 @@ def validate_response(
         checks = {"greeting": reparsed.speech_act == "social.greeting"}
         if source.has("marker.salutation_extension"):
             checks["salutation_extension"] = "there" in text.lower()
+    elif response.act == "acknowledge_positive_statement":
+        lower = text.lower()
+        checks = {
+            "acknowledges_positive_feedback": "glad" in lower or "nice" in lower,
+            "keeps_conversation_open": "?" in text,
+        }
+    elif response.act == "acknowledge_negative_statement":
+        lower = text.lower()
+        checks = {
+            "acknowledges_difficulty": "sounds rough" in lower or "sounds hard" in lower,
+            "invites_context": "what happened" in lower or "tell me" in lower,
+        }
+    elif response.act == "acknowledge_topic_avoidance":
+        lower = text.lower()
+        checks = {
+            "acknowledges_preference": "got it" in lower,
+            "respects_topic_boundary": "bring up" in lower and "ask" in lower,
+            "mentions_requested_topic": str(response.recipient).lower() in lower,
+        }
     elif response.act == "confirm_presence":
         checks = {
             "presence_confirmation": reparsed.speech_act == "response.presence_confirmation",

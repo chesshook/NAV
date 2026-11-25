@@ -286,8 +286,14 @@ class KnowledgeStore:
             rows = self.conn.execute(sql, params).fetchall()
         return [self._row_to_record(row) for row in rows]
 
-    def search_facts(self, query: str | Iterable[str], limit: int = 20) -> list[dict]:
-        """Find facts by subject, aliases, and tagged topic—not by answer prose alone."""
+    def search_facts(
+        self,
+        query: str | Iterable[str],
+        limit: int = 20,
+        subject: str | None = None,
+        predicates: Iterable[str] | None = None,
+    ) -> list[dict]:
+        """Find facts with optional exact subject/alias and predicate constraints."""
         raw_terms = query.split() if isinstance(query, str) else list(query)
         terms: list[str] = []
         for raw in raw_terms:
@@ -334,6 +340,19 @@ class KnowledgeStore:
         by_id = {str(row["fact_id"]): self._row_to_fact(row) for row in fetched}
         results = [by_id[fact_id] for fact_id in ids if fact_id in by_id]
         # Priority is hand-authored metadata; FTS supplies candidates, not truth.
+        if subject:
+            wanted = set(re.findall(r"[a-z0-9]+", subject.lower()))
+            def subject_matches(item: dict) -> bool:
+                candidates = [item["subject"], *item["aliases"]]
+                for candidate in candidates:
+                    words = set(re.findall(r"[a-z0-9]+", str(candidate).lower()))
+                    if wanted and wanted.issubset(words):
+                        return True
+                return False
+            results = [item for item in results if subject_matches(item)]
+        if predicates is not None:
+            allowed = {str(item) for item in predicates}
+            results = [item for item in results if item["predicate"] in allowed]
         results.sort(key=lambda item: (item["priority"], -item["confidence"], item["fact_id"]))
         return results[:limit]
 

@@ -1,15 +1,15 @@
-"""MCR-L 0.3: meaning -> sensitivity -> plan -> realization -> verification.
+"""MCR-L 0.4: dialogue competence, safe capabilities, and optional grounded knowledge.
 
-Conversational acts use semantic composition. Topic questions use atomic, sourced
-facts and a separate epistemic response composer. Longer factual explanations can
-still use the document index, with a strict evidence gate.
+The current utterance determines the route. Arithmetic is solved independently;
+dialogue acts are composed from meaning; optional fact lookup requires an explicit
+current topic plus a matching property. No knowledge domain is preloaded by default.
 """
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
 
+from .calculator import try_calculate
 from .discourse_state import DiscourseState
 from .grammar_engine import GrammarEngine
 from .knowledge import KnowledgeStore
@@ -30,21 +30,44 @@ class Answer:
     diagnostics: dict = field(default_factory=dict)
 
 
+PROPERTY_CUES = {
+    "distance": {"distance", "far", "away", "near"},
+    "color": {"color", "colour", "white", "gray", "grey"},
+    "size": {"size", "big", "large", "wide", "diameter", "small"},
+    "population": {"population"},
+    "capital": {"capital"},
+    "definition": {"meaning", "definition"},
+}
+
+
 class MCRLanguageEngine:
     def __init__(self, store: KnowledgeStore, minimum_evidence: float = 0.68) -> None:
         self.store = store
         self.minimum_evidence = minimum_evidence
-        self.minimum_score = minimum_evidence
+        self.minimum_score = minimum_evidence  # compatibility name
         self.last_plan = None
         self.discourse = DiscourseState()
         self.grammar = GrammarEngine()
-        self._load_builtin_facts()
+        # Deliberately do not load mcrl/data/facts.jsonl here. Knowledge is
+        # optional input supplied by the operator, not hard-coded personality.
 
-    def _load_builtin_facts(self) -> None:
-        """Load the small, source-attributed fact seed idempotently."""
-        fact_file = Path(__file__).resolve().parent / "data" / "facts.jsonl"
-        if fact_file.is_file():
-            self.store.import_facts_jsonl(str(fact_file))
+    @staticmethod
+    def _topic_from_graph(graph) -> str:
+        nodes = [
+            node.value for node in graph.by_kind("topic")
+            if node.concept in {"topic.target", "topic.resolved"}
+        ]
+        return nodes[0] if nodes else ""
+
+    @staticmethod
+    def _requested_property(graph) -> str | None:
+        words = set(graph.tokens)
+        for property_name, cues in PROPERTY_CUES.items():
+            if words & cues:
+                return property_name
+        if {"how", "far"} <= words:
+            return "distance"
+        return None
 
     @staticmethod
     def _record_terms(record: dict) -> set[str]:
@@ -57,141 +80,172 @@ class MCRLanguageEngine:
         ]
         return set(re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)*", " ".join(fields).lower()))
 
-    @staticmethod
-    def _topic_terms(graph) -> list[str]:
-        values = [
-            node.value for node in graph.nodes
-            if node.kind == "topic"
-            or (node.kind == "entity" and node.value.lower() not in {"mcr", "mcr-l", "assistant", "chatgpt"})
-        ]
-        values.extend(graph.lexical_tokens)
-        result: list[str] = []
-        for value in values:
-            for term in re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)*", str(value).lower()):
-                if len(term) > 1 and term not in result:
-                    result.append(term)
-        return result
-
-    @staticmethod
-    def _topic_label(graph, facts: list[dict], topic_terms: list[str]) -> str:
-        if facts:
-            return str(facts[0]["subject"])
-        nodes = [node.value for node in graph.nodes if node.kind in {"topic", "entity"}]
-        ignored = {"mcr", "mcr-l", "assistant", "chatgpt"}
-        for value in nodes:
-            if value.lower() not in ignored:
-                return value
-        return topic_terms[0] if topic_terms else ""
-
-    def _factual_candidate(self, graph):
-        query_terms = set(graph.lexical_tokens)
-        if len(query_terms) < 1:
-            return None, 0.0, {"reason": "not enough distinct content terms"}
-
-        records = self.store.search(" ".join(sorted(query_terms)), limit=80)
+    def _factual_document_candidate(self, topic: str):
+        """Optional document fallback with exact topic coverage, never query-word OR."""
+        topic_terms = set(re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)*", topic.lower()))
+        if not topic_terms:
+            return None, 0.0, {"reason": "no explicit topic"}
+        records = self.store.search(" ".join(sorted(topic_terms)), limit=80)
         ranked = []
         for record in records:
-            record_terms = self._record_terms(record)
-            title_terms = set(re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)*", record.get("title", "").lower()))
-            coverage = len(query_terms & record_terms) / max(1, len(query_terms))
-            title_coverage = len(query_terms & title_terms) / max(1, len(query_terms))
-            if len(query_terms) == 1 and title_coverage < 1.0:
-                continue
-            source_quality = 1.0 if record.get("source") else 0.0
-            score = 0.72 * coverage + 0.18 * title_coverage + 0.10 * source_quality
-            ranked.append((score, coverage, record))
-
-        if not ranked:
-            return None, 0.0, {"reason": "no indexed candidates", "candidates": 0}
-        ranked.sort(key=lambda item: item[0], reverse=True)
-        score, coverage, record = ranked[0]
-        diagnostics = {
-            "candidates": len(ranked),
-            "term_coverage": round(coverage, 4),
-            "title_coverage": round(
-                len(query_terms & set(re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)*", record.get("title", "").lower())))
-                / max(1, len(query_terms)),
-                4,
-            ),
-            "source_present": bool(record.get("source")),
-            "score": round(score, 4),
-        }
-        if coverage < 0.70 or score < self.minimum_evidence or not record.get("source") or not record.get("answer"):
-            return None, score, diagnostics
-        return record, score, diagnostics
-
-    def answer(self, utterance: str) -> Answer:
-        graph = parse_meaning(utterance, self.discourse)
-        sensitivity = calculate_sensitivity(graph)
-
-        # Presence, greetings, gratitude, identity and other supported pragmatic
-        # acts are solved from the input meaning, not from document retrieval.
-        response = solve_response(graph, sensitivity)
-        if response is not None:
-            text, ast = self.grammar.realize(response, graph)
-            validation = validate_response(response, graph, text)
-            self.discourse.observe_graph(graph)
-            if not validation.valid:
-                return Answer(
-                    text="I formed a response plan, but its wording did not preserve enough of the intended meaning. I am abstaining rather than presenting it as correct.",
-                    confidence=validation.preservation,
-                    abstained=True,
-                    diagnostics={
-                        "mode": "semantic_composition",
-                        "graph": graph.summary(),
-                        "sensitivity": sensitivity.diagnostics(),
-                        "response_plan": response.__dict__,
-                        "grammar_ast": ast.__dict__,
-                        "verification": validation.diagnostics(),
-                        "discourse": self.discourse.snapshot(),
-                    },
+            title_and_tags = set(
+                re.findall(
+                    r"[a-z0-9]+(?:-[a-z0-9]+)*",
+                    " ".join(
+                        [
+                            record.get("title", ""),
+                            " ".join(record.get("keywords", [])),
+                            " ".join(record.get("tags", [])),
+                        ]
+                    ).lower(),
                 )
+            )
+            all_terms = self._record_terms(record)
+            title_coverage = len(topic_terms & title_and_tags) / len(topic_terms)
+            coverage = len(topic_terms & all_terms) / len(topic_terms)
+            # Every topic term must be present; one stray word is not a subject match.
+            if coverage < 1.0 or title_coverage < 1.0:
+                continue
+            if not record.get("answer") or not record.get("source"):
+                continue
+            score = 0.90 * title_coverage + 0.10 * (1.0 if record.get("source") else 0.0)
+            ranked.append((score, record))
+        if not ranked:
+            return None, 0.0, {"reason": "no exact-topic sourced document", "topic_terms": sorted(topic_terms)}
+        ranked.sort(key=lambda row: row[0], reverse=True)
+        score, record = ranked[0]
+        return record, score, {
+            "reason": "exact-topic document",
+            "topic_terms": sorted(topic_terms),
+            "score": round(score, 4),
+            "source_present": True,
+        }
+
+    def _answer_dialogue(self, graph, sensitivity) -> Answer | None:
+        response = solve_response(graph, sensitivity)
+        if response is None:
+            return None
+        text, ast = self.grammar.realize(response, graph)
+        validation = validate_response(response, graph, text)
+        if response.act == "acknowledge_topic_avoidance":
+            self.discourse.avoid_topic(str(response.recipient))
+        self.discourse.observe_graph(graph)
+        if not validation.valid:
             return Answer(
-                text=text,
+                text="I understood the broad conversational intent, but my response wording failed its meaning check. I should not present it as a successful answer.",
                 confidence=validation.preservation,
-                abstained=False,
-                selected_title="Composed response meaning: " + response.act,
-                source="MCR-L semantic composition and grammar rules",
+                abstained=True,
                 diagnostics={
-                    "mode": "semantic_composition",
-                    "intent": graph.speech_act.split(".")[-1],
+                    "mode": "dialogue_composition",
                     "graph": graph.summary(),
-                    "sensitivity": sensitivity.diagnostics(),
-                    "response_plan": {
-                        "act": response.act,
-                        "predicate": response.predicate,
-                        "affect": response.affect,
-                        "recipient": response.recipient,
-                        "reciprocal": response.reciprocal,
-                        "requirements": response.requirements,
-                        "utility": round(response.utility, 5),
-                    },
+                    "response_plan": response.__dict__,
                     "grammar_ast": ast.__dict__,
                     "verification": validation.diagnostics(),
                     "discourse": self.discourse.snapshot(),
                 },
             )
+        return Answer(
+            text=text,
+            confidence=validation.preservation,
+            abstained=False,
+            selected_title=f"Composed dialogue act: {response.act}",
+            source="MCR-L semantic response planner and grammar",
+            diagnostics={
+                "mode": "dialogue_composition",
+                "intent": graph.speech_act,
+                "graph": graph.summary(),
+                "sensitivity": sensitivity.diagnostics(),
+                "response_plan": {
+                    "act": response.act,
+                    "recipient": response.recipient,
+                    "requirements": response.requirements,
+                    "utility": round(response.utility, 5),
+                },
+                "grammar_ast": ast.__dict__,
+                "verification": validation.diagnostics(),
+                "discourse": self.discourse.snapshot(),
+            },
+        )
 
-        query_terms = self._topic_terms(graph)
+    def answer(self, utterance: str) -> Answer:
+        # Deterministic capabilities are tried before open-topic fallback. They
+        # never query the knowledge base and therefore cannot inherit an old topic.
+        calculation = try_calculate(utterance)
+        if calculation is not None:
+            return Answer(
+                text=calculation.text(),
+                confidence=1.0,
+                abstained=False,
+                selected_title="Safe arithmetic evaluation",
+                source="MCR-L bounded arithmetic evaluator",
+                diagnostics={
+                    "mode": "calculation",
+                    "expression": calculation.expression,
+                    "operation": calculation.operation,
+                    "result": calculation.result,
+                },
+            )
+
+        graph = parse_meaning(utterance, self.discourse)
+        sensitivity = calculate_sensitivity(graph)
+
+        dialogue_answer = self._answer_dialogue(graph, sensitivity)
+        if dialogue_answer is not None:
+            return dialogue_answer
+
+        topic = self._topic_from_graph(graph)
+        requested_property = self._requested_property(graph)
         factual_intent = graph.intent in {
             "topic_information", "define", "explain", "question",
         }
-        if factual_intent and query_terms:
-            facts = self.store.search_facts(query_terms, limit=40)
-            topic = self._topic_label(graph, facts, query_terms)
-            topic_terms = set(graph.lexical_tokens) | set(query_terms)
-            topic_terms -= {"tell", "know", "about", "anything", "something", "facts"}
+
+        if factual_intent:
+            if not topic:
+                self.discourse.observe_graph(graph)
+                return Answer(
+                    text="I can tell you're asking something, but I can't identify the subject yet. What thing are you asking about?",
+                    confidence=0.0,
+                    abstained=False,
+                    selected_title="Clarification: missing topic",
+                    diagnostics={
+                        "mode": "topic_clarification",
+                        "graph": graph.summary(),
+                        "discourse": self.discourse.snapshot(),
+                    },
+                )
+
+            # Only an explicit or correctly resolved current-turn topic can
+            # reach the fact store. A previous topic never supplies a new subject.
+            topic_terms = re.findall(r"[a-z0-9]+", topic.lower())
+            allowed_predicates = None
+            if requested_property:
+                # If no stored fact supports this property, do not substitute
+                # another fact about the same subject.
+                from .topic_responder import PROPERTY_PREDICATES
+                allowed_predicates = PROPERTY_PREDICATES.get(requested_property, set())
+            facts = self.store.search_facts(
+                topic_terms,
+                subject=topic,
+                predicates=allowed_predicates,
+                limit=40,
+            ) if topic_terms else []
+
             if facts:
-                composed = compose_topic_answer(topic, facts, topic_terms)
+                composed = compose_topic_answer(
+                    topic,
+                    facts,
+                    query_terms=graph.tokens,
+                    requested_property=requested_property,
+                )
                 self.discourse.observe_graph(graph)
                 self.discourse.remember_topic(topic)
-                source_names = sorted({fact["source"] for fact in composed.selected_facts})
+                sources = sorted({fact["source"] for fact in composed.selected_facts})
                 return Answer(
                     text=composed.text,
                     confidence=composed.support_score,
                     abstained=False,
-                    selected_title=f"Composed partial knowledge about {composed.topic}",
-                    source="; ".join(source_names),
+                    selected_title=f"Source-backed partial answer about {composed.topic}",
+                    source="; ".join(sources),
                     diagnostics={
                         "mode": "fact_composition",
                         "graph": graph.summary(),
@@ -201,10 +255,17 @@ class MCRLanguageEngine:
                     },
                 )
 
-            record, score, evidence = self._factual_candidate(graph)
-            self.discourse.observe_graph(graph)
-            self.discourse.remember_topic(topic)
+            # Optional prose records must match every explicit topic term in
+            # their title/tags. Property-specific questions do not use generic
+            # paragraphs because they may answer the wrong attribute.
+            record, score, evidence = (
+                (None, 0.0, {"reason": "property-specific fact unavailable"})
+                if requested_property
+                else self._factual_document_candidate(topic)
+            )
             if record is not None:
+                self.discourse.observe_graph(graph)
+                self.discourse.remember_topic(topic)
                 return Answer(
                     text=record["answer"].strip(),
                     confidence=score,
@@ -212,7 +273,7 @@ class MCRLanguageEngine:
                     selected_title=record["title"],
                     source=record["source"],
                     diagnostics={
-                        "mode": "evidence_backed_retrieval",
+                        "mode": "evidence_backed_document",
                         "graph": graph.summary(),
                         "sensitivity": sensitivity.diagnostics(),
                         "evidence": evidence,
@@ -220,15 +281,22 @@ class MCRLanguageEngine:
                     },
                 )
 
-            composed = compose_topic_answer(topic, (), topic_terms)
+            composed = compose_topic_answer(
+                topic,
+                (),
+                query_terms=graph.tokens,
+                requested_property=requested_property,
+            )
+            self.discourse.observe_graph(graph)
+            self.discourse.remember_topic(topic)
             return Answer(
                 text=composed.text,
                 confidence=0.0,
                 abstained=True,
-                selected_title=f"No sourced facts indexed for {composed.topic}",
-                source="Local fact store has no matching entry",
+                selected_title=f"No matching evidence for {composed.topic}",
+                source="No matching, topic-specific source in the local store",
                 diagnostics={
-                    "mode": "unknown_topic",
+                    "mode": "unknown_topic_or_property",
                     "graph": graph.summary(),
                     "sensitivity": sensitivity.diagnostics(),
                     "topic_answer": composed.diagnostics(),
@@ -237,15 +305,39 @@ class MCRLanguageEngine:
                 },
             )
 
+        if graph.speech_act == "request.avoid_topic":
+            # This should have been handled by solve_response; defensive fallback.
+            topic = topic or "that topic"
+            self.discourse.avoid_topic(topic)
+            self.discourse.observe_graph(graph)
+            return Answer(
+                text=f"Got it — I won't bring up {topic} unless you ask.",
+                confidence=1.0,
+                abstained=False,
+                selected_title="Acknowledged topic boundary",
+                diagnostics={"mode": "topic_boundary", "discourse": self.discourse.snapshot()},
+            )
+
         self.discourse.observe_graph(graph)
+        if graph.speech_act == "assertion":
+            return Answer(
+                text="Got you. I may be missing some context, though—what would you like to explore about that?",
+                confidence=0.0,
+                abstained=False,
+                selected_title="Conversational continuation",
+                diagnostics={
+                    "mode": "conversation_continuation",
+                    "graph": graph.summary(),
+                    "sensitivity": sensitivity.diagnostics(),
+                    "discourse": self.discourse.snapshot(),
+                },
+            )
+
         return Answer(
-            text=(
-                "I have represented parts of that message, but this build does not yet "
-                "have a validated composition rule for its speech act. I will not fill "
-                "the gap with a guessed or retrieved sentence."
-            ),
+            text="I'm not fully following what you're asking yet. Could you say a little more about what you mean?",
             confidence=0.0,
             abstained=True,
+            selected_title="Clarification needed",
             diagnostics={
                 "mode": "unsupported_semantic_structure",
                 "graph": graph.summary(),

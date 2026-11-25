@@ -43,6 +43,7 @@ def _candidate_score(
     task_fit = 0.20 if candidate.act in {
         "reciprocate_meeting", "reciprocate_greeting", "acknowledge_gratitude",
         "reciprocate_farewell", "answer_wellbeing", "identify_self", "confirm_presence",
+        "acknowledge_positive_statement", "acknowledge_negative_statement", "acknowledge_topic_avoidance",
     } else 0.0
     missing_requirements = sum(
         0.035 for requirement in candidate.requirements
@@ -121,6 +122,37 @@ def solve_response(
                 recipient="you",
                 requirements=("acknowledge_incomplete_question", "invite_specific_topic"),
                 utility=0.20,
+            ),
+        )
+    elif graph.speech_act == "social.positive_acknowledgement":
+        candidates = (
+            ResponseMeaning(
+                act="acknowledge_positive_statement",
+                affect="positive",
+                recipient="you",
+                requirements=("acknowledge_positive_feedback", "maintain_conversation"),
+                utility=0.22,
+            ),
+        )
+    elif graph.speech_act == "social.empathetic_acknowledgement":
+        candidates = (
+            ResponseMeaning(
+                act="acknowledge_negative_statement",
+                affect="negative",
+                recipient="you",
+                requirements=("acknowledge_negative_affect", "invite_context_without_assuming"),
+                utility=0.22,
+            ),
+        )
+    elif graph.speech_act == "request.avoid_topic":
+        topic_nodes = graph.by_kind("topic")
+        topic = topic_nodes[0].value if topic_nodes else "that topic"
+        candidates = (
+            ResponseMeaning(
+                act="acknowledge_topic_avoidance",
+                recipient=topic,
+                requirements=("acknowledge_preference", "do_not_repeat_topic"),
+                utility=0.24,
             ),
         )
     elif graph.speech_act == "request.presence_check":
