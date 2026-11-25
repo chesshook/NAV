@@ -9,6 +9,7 @@
 - [x] Grammar AST and deterministic linearization for an initial speech-act slice.
 - [x] Back-parsing checks for response meaning preservation.
 - [x] Separate evidence-gated factual lookup path.
+- [x] Bare wh-word fragments are classified as clarification requests, not unsupported factual questions.
 - [x] Regression tests for paraphrase equivalence, negation, temporal/comparative node extraction, evidence gating, and social composition.
 - [ ] Broader grammatical parsing and semantic-role assignment for ordinary clauses.
 - [ ] Persistent discourse state with explicit privacy/reset controls.
