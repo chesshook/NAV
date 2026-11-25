@@ -135,7 +135,7 @@ class MCRLanguageEngine:
         self.discourse.observe_graph(graph)
         self.situation.observe(
             graph,
-            response_act=response.act,
+            assistant_action=response.act,
             outcome="answered" if validation.valid else "response_validation_failed",
         )
         pragmatic_diagnostics = analyze_pragmatics(tuple(graph.tokens)).diagnostics()
