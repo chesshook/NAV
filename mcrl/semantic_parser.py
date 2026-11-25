@@ -113,7 +113,7 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
     topic_prefix = _topic_prefix_length(words)
     topic_source = words[topic_prefix:] if topic_prefix else words
 
-    lexical_tokens = tuple(
+    lexical_tokens = () if _is_presence_confirmation(words) else tuple(
         word for word in topic_source
         if word not in STOPWORDS and len(word) > 1
     )
@@ -315,8 +315,10 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
 
     if resolved_topic:
         add("topic.resolved", "topic", resolved_topic, next((word for word in words if word in ANAPHORS), "it"), 0.85)
+    non_topical = GREETING_WORDS | GRATITUDE_WORDS | FAREWELL_WORDS | MEETING_WORDS | set(POSITIVE_MODIFIERS)
     for word in lexical_tokens:
-        add("topic.lexical", "topic", word, word, 0.70)
+        if word not in non_topical:
+            add("topic.lexical", "topic", word, word, 0.70)
 
     known = (
         set(POSITIVE_MODIFIERS) | MEETING_WORDS | GREETING_WORDS | GRATITUDE_WORDS
@@ -329,9 +331,4 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
         if raw[:1].isupper() and lower not in known and len(raw) > 1:
             add("entity.named", "entity", raw, raw)
 
-    if discourse is not None:
-        discourse.observe_parse(
-            words,
-            tuple(node.value for node in builder.nodes if node.kind in {"topic", "entity"}),
-        )
     return builder.build(original, normalized, words, lexical_tokens, intent)
