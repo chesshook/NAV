@@ -57,6 +57,21 @@
 - [ ] Learn cue weights from reviewed train/validation examples and freeze the held-out test set.
 - [ ] Expand response realization beyond finite templates while preserving semantic constraints.
 
+## 0.7 — Compositional interaction planning (current branch)
+- [x] Compile explicit speech-output directives into a payload-bearing action plan.
+- [x] Give explicit output commands priority over embedded questions the user has prohibited.
+- [x] Interpret assistant-directed action verbs as interaction requests, not factual subjects.
+- [x] Distinguish symbolic expression from physical capability and avoid claiming a body.
+- [x] Route standalone interjections to social continuation rather than factual lookup.
+- [x] Store actual user and assistant utterances in the bounded session ledger.
+- [x] Answer conversation-history requests from recorded turns, without inventing missing history.
+- [x] Add transcript-driven regression tests for the observed failures and compositional paraphrases.
+- [ ] Generalize clause decomposition across coordination, contrast, conditionals, and embedded clauses.
+- [ ] Learn semantic frames and interaction policies from a broad reviewed conversation corpus.
+- [ ] Add held-out evaluation of action intent, speech-act scope, negation, priority, and history questions.
+- [ ] Replace finite response templates with richer meaning-to-language realization constrained by a response plan.
+- [ ] Add a learned language competence layer only after dataset, licensing, training, CPU/RAM, and evaluation design are established.
+
 ## 0.6 — Knowledge and reasoning (optional layer)
 - [ ] Curate user-selected and licensed atomic facts with provenance and source dates.
 - [ ] Add subject/predicate/object indexing and source conflict detection.

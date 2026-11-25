@@ -1,4 +1,4 @@
-# MCR-L 0.6: active architecture and safeguards
+# MCR-L 0.7: compositional interaction and grounded session memory
 
 ## 1. Current-utterance semantic graph
 
@@ -201,3 +201,50 @@ The v0.6 path is:
 ]
 
 The response path is meaning-first rather than autoregressive next-token selection. The current lexicon and parser are still bounded, and the surface grammar still has finite constructions. This is a deliberate research boundary: the milestone removes token-by-token response framing for its supported constructions; it does not solve open-domain language understanding or unrestricted sentence generation.
+
+
+## 13. Interaction plan as an operation on the dialogue
+
+Some user messages do not request a fact or a conventional speech-act response. They request an operation on the interaction itself:
+- emit a user-supplied string;
+- perform a symbolic expression;
+- explain a physical capability boundary;
+- summarize the current session;
+- acknowledge a standalone interjection.
+
+The interaction planner compiles these into:
+
+[
+P=(o,p,a,mathcal{C},mathcal{E},q)
+]
+
+where (o) is the operation, (p) the payload, (a) the requested action, (mathcal{C}) the constraints, (mathcal{E}) the structural evidence, and (q) the precedence.
+
+Candidate operations are resolved before factual retrieval. Explicit user-supplied speech output has higher precedence than an embedded question whose disclosure was explicitly prohibited. Thus a turn such as "don't tell me who you are, just say Hello" is interpreted as a negative constraint on identity disclosure plus a positive speech-output directive. The requested payload is emitted, not answered as an identity question.
+
+An assistant-directed action frame such as "Can you smile for me?" is interpreted as an action predicate with an addressee and beneficiary. It is not turned into a subject entity called "smile". When the action can only be represented symbolically, the response states or shows that limitation rather than claiming physical embodiment.
+
+## 14. Evidence-bounded conversation recap
+
+Each bounded turn record stores the actual user utterance, assistant response, inferred user moves, conversational goal, topic, and action outcome. A recap is composed from these records:
+
+[
+H_t = [(u_1,r_1),ldots,(u_t,r_t)]
+]
+
+[
+operatorname{recap}(H_t)=operatorname{linearize}
+left(
+operatorname{select}_{k}(H_t)
+ight)
+]
+
+The recap selects only the most recent recorded turns within the configured history limit. It does not use the world-knowledge database and does not invent unrecorded facts. The explicit transcript-style fallback is intentionally evidence-bounded.
+
+## 15. Architecture boundary
+
+The current engine has two kinds of mathematical structure:
+1. explicit semantic constraint scoring and counterfactual sensitivity;
+2. symbolic composition of interaction operations and bounded conversational history.
+
+Neither one is, by itself, a learned general language model. A system with broad, GPT-like conversational competence requires learned representations from diverse language data, broad compositional coverage, and an evaluator that tests unseen paraphrases and contexts. No hand-authored rule count or low latency can substitute for that training and evaluation. The next research stage must focus on data-driven abstraction rather than expanding the phrase inventory.

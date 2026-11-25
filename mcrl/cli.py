@@ -31,7 +31,7 @@ def _print_answer(engine: MCRLanguageEngine, utterance: str, debug: bool = False
 
 
 def interactive(engine: MCRLanguageEngine, debug: bool = False) -> None:
-    print("MCR-L 0.6 · mathematical interpretation and situation state")
+    print("MCR-L 0.7 · compositional interaction and session reasoning")
     print("Type /exit to quit. Use --debug to inspect meaning graphs and sensitivity.")
     while True:
         try:
