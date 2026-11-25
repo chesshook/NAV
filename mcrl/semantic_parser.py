@@ -187,6 +187,10 @@ def _extract_topic(
         and word not in PROPERTY_WORDS
         and word not in POSITIVE_MODIFIERS
         and word not in NEGATIVE_MODIFIERS
+        and word not in GREETING_WORDS
+        and word not in GRATITUDE_WORDS
+        and word not in FAREWELL_WORDS
+        and word not in MEETING_WORDS
         and word not in ASSISTANT_ALIASES
         and word not in SECOND_PERSON
         and word not in FIRST_PERSON
