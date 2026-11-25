@@ -140,7 +140,7 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
         speech_act = "assertion"
         intent = "statement"
 
-    act_id = add(speech_act, "speech_act", speech_act.split(".")[-1])
+    act_id = add(speech_act, "speech_act", speech_act)
     if meeting:
         event_id = add("event.meeting", "event", "meeting", next((w for w in words if w in MEETING_WORDS), "meet"))
         builder.edge(act_id, event_id, "has_event")
