@@ -119,7 +119,7 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
     )
     # Resolve simple anaphors against the most recent explicit discourse topic.
     resolved_topic = ""
-    if not lexical_tokens and discourse is not None and _has(words, ANAPHORS):
+    if discourse is not None and _has(words, ANAPHORS):
         resolved_topic = discourse.last_topic
 
     builder = MeaningGraphBuilder()
@@ -328,7 +328,7 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
     )
     for raw in parts:
         lower = raw.lower()
-        if raw[:1].isupper() and lower not in known and len(raw) > 1:
+        if raw[:1].isupper() and lower not in known and lower not in lexical_tokens and len(raw) > 1:
             add("entity.named", "entity", raw, raw)
 
     return builder.build(original, normalized, words, lexical_tokens, intent)
