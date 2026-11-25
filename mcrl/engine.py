@@ -18,6 +18,8 @@ from .meaning_validator import validate_response
 from .semantic_parser import parse_meaning
 from .sensitivity import calculate_sensitivity
 from .topic_responder import compose_topic_answer
+from .pragmatics import analyze_pragmatics
+from .situation_model import DialogueSituation
 
 
 @dataclass
@@ -47,6 +49,7 @@ class MCRLanguageEngine:
         self.minimum_score = minimum_evidence  # compatibility name
         self.last_plan = None
         self.discourse = DiscourseState()
+        self.situation = DialogueSituation()
         self.grammar = GrammarEngine()
         # Deliberately do not load mcrl/data/facts.jsonl here. Knowledge is
         # optional input supplied by the operator, not hard-coded personality.
@@ -130,6 +133,12 @@ class MCRLanguageEngine:
         if response.act == "acknowledge_topic_avoidance":
             self.discourse.avoid_topic(str(response.recipient))
         self.discourse.observe_graph(graph)
+        self.situation.observe(
+            graph,
+            response_act=response.act,
+            outcome="answered" if validation.valid else "response_validation_failed",
+        )
+        pragmatic_diagnostics = analyze_pragmatics(tuple(graph.tokens)).diagnostics()
         if not validation.valid:
             return Answer(
                 text="I understood the broad conversational intent, but my response wording failed its meaning check. I should not present it as a successful answer.",
@@ -142,6 +151,8 @@ class MCRLanguageEngine:
                     "grammar_ast": ast.__dict__,
                     "verification": validation.diagnostics(),
                     "discourse": self.discourse.snapshot(),
+                    "pragmatic_interpretation": pragmatic_diagnostics,
+                    "situation": self.situation.snapshot(),
                 },
             )
         return Answer(
@@ -164,6 +175,8 @@ class MCRLanguageEngine:
                 "grammar_ast": ast.__dict__,
                 "verification": validation.diagnostics(),
                 "discourse": self.discourse.snapshot(),
+                "pragmatic_interpretation": pragmatic_diagnostics,
+                "situation": self.situation.snapshot(),
             },
         )
 
@@ -172,6 +185,7 @@ class MCRLanguageEngine:
         # never query the knowledge base and therefore cannot inherit an old topic.
         calculation = try_calculate(utterance)
         if calculation is not None:
+            self.situation.record_action("bounded_arithmetic", "completed")
             return Answer(
                 text=calculation.text(),
                 confidence=1.0,
@@ -183,6 +197,7 @@ class MCRLanguageEngine:
                     "expression": calculation.expression,
                     "operation": calculation.operation,
                     "result": calculation.result,
+                    "situation": self.situation.snapshot(),
                 },
             )
 
@@ -202,6 +217,7 @@ class MCRLanguageEngine:
         if factual_intent:
             if not topic:
                 self.discourse.observe_graph(graph)
+                self.situation.observe(graph, "ask_for_subject", "clarification_requested")
                 return Answer(
                     text="I can tell you're asking something, but I can't identify the subject yet. What thing are you asking about?",
                     confidence=0.0,
@@ -239,6 +255,7 @@ class MCRLanguageEngine:
                 )
                 self.discourse.observe_graph(graph)
                 self.discourse.remember_topic(topic)
+                self.situation.observe(graph, "answer_source_backed_facts", "answered")
                 sources = sorted({fact["source"] for fact in composed.selected_facts})
                 return Answer(
                     text=composed.text,
@@ -266,6 +283,7 @@ class MCRLanguageEngine:
             if record is not None:
                 self.discourse.observe_graph(graph)
                 self.discourse.remember_topic(topic)
+                self.situation.observe(graph, "answer_source_backed_document", "answered")
                 return Answer(
                     text=record["answer"].strip(),
                     confidence=score,
@@ -289,6 +307,7 @@ class MCRLanguageEngine:
             )
             self.discourse.observe_graph(graph)
             self.discourse.remember_topic(topic)
+            self.situation.observe(graph, "admit_missing_evidence", "abstained")
             return Answer(
                 text=composed.text,
                 confidence=0.0,
@@ -310,6 +329,7 @@ class MCRLanguageEngine:
             topic = topic or "that topic"
             self.discourse.avoid_topic(topic)
             self.discourse.observe_graph(graph)
+            self.situation.observe(graph, "respect_topic_boundary", "acknowledged")
             return Answer(
                 text=f"Got it — I won't bring up {topic} unless you ask.",
                 confidence=1.0,
@@ -320,6 +340,7 @@ class MCRLanguageEngine:
 
         self.discourse.observe_graph(graph)
         if graph.speech_act == "assertion":
+            self.situation.observe(graph, "continue_conversation", "continued")
             return Answer(
                 text="Got you. I may be missing some context, though—what would you like to explore about that?",
                 confidence=0.0,
@@ -333,6 +354,7 @@ class MCRLanguageEngine:
                 },
             )
 
+        self.situation.observe(graph, "request_clarification", "clarification_requested")
         return Answer(
             text="I'm not fully following what you're asking yet. Could you say a little more about what you mean?",
             confidence=0.0,
