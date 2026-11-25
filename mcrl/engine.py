@@ -1,12 +1,14 @@
-"""MCR-L 0.2 engine: meaning -> sensitivity -> response plan -> grammar -> verify.
+"""MCR-L 0.3: meaning -> sensitivity -> plan -> realization -> verification.
 
-Knowledge retrieval is a separate, evidence-gated path for factual questions. It is
-never used to answer social turns or to select arbitrary words in a sentence.
+Conversational acts use semantic composition. Topic questions use atomic, sourced
+facts and a separate epistemic response composer. Longer factual explanations can
+still use the document index, with a strict evidence gate.
 """
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from .discourse_state import DiscourseState
 from .grammar_engine import GrammarEngine
@@ -15,6 +17,7 @@ from .meaning_solver import solve_response
 from .meaning_validator import validate_response
 from .semantic_parser import parse_meaning
 from .sensitivity import calculate_sensitivity
+from .topic_responder import compose_topic_answer
 
 
 @dataclass
@@ -31,10 +34,17 @@ class MCRLanguageEngine:
     def __init__(self, store: KnowledgeStore, minimum_evidence: float = 0.68) -> None:
         self.store = store
         self.minimum_evidence = minimum_evidence
-        self.minimum_score = minimum_evidence  # compatibility name; this is not a calibrated probability
-        self.last_plan = None  # retained for callers of the 0.1 API
+        self.minimum_score = minimum_evidence
+        self.last_plan = None
         self.discourse = DiscourseState()
         self.grammar = GrammarEngine()
+        self._load_builtin_facts()
+
+    def _load_builtin_facts(self) -> None:
+        """Load the small, source-attributed fact seed idempotently."""
+        fact_file = Path(__file__).resolve().parent / "data" / "facts.jsonl"
+        if fact_file.is_file():
+            self.store.import_facts_jsonl(str(fact_file))
 
     @staticmethod
     def _record_terms(record: dict) -> set[str]:
@@ -46,6 +56,32 @@ class MCRLanguageEngine:
             " ".join(record.get("tags", [])),
         ]
         return set(re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)*", " ".join(fields).lower()))
+
+    @staticmethod
+    def _topic_terms(graph) -> list[str]:
+        values = [
+            node.value for node in graph.nodes
+            if node.kind == "topic"
+            or (node.kind == "entity" and node.value.lower() not in {"mcr", "mcr-l", "assistant", "chatgpt"})
+        ]
+        values.extend(graph.lexical_tokens)
+        result: list[str] = []
+        for value in values:
+            for term in re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)*", str(value).lower()):
+                if len(term) > 1 and term not in result:
+                    result.append(term)
+        return result
+
+    @staticmethod
+    def _topic_label(graph, facts: list[dict], topic_terms: list[str]) -> str:
+        if facts:
+            return str(facts[0]["subject"])
+        nodes = [node.value for node in graph.nodes if node.kind in {"topic", "entity"}]
+        ignored = {"mcr", "mcr-l", "assistant", "chatgpt"}
+        for value in nodes:
+            if value.lower() not in ignored:
+                return value
+        return topic_terms[0] if topic_terms else ""
 
     def _factual_candidate(self, graph):
         query_terms = set(graph.lexical_tokens)
@@ -88,8 +124,8 @@ class MCRLanguageEngine:
         graph = parse_meaning(utterance, self.discourse)
         sensitivity = calculate_sensitivity(graph)
 
-        # The response planner sees meaning and its counterfactual importance
-        # before a single output word is selected.
+        # Presence, greetings, gratitude, identity and other supported pragmatic
+        # acts are solved from the input meaning, not from document retrieval.
         response = solve_response(graph, sensitivity)
         if response is not None:
             text, ast = self.grammar.realize(response, graph)
@@ -136,10 +172,34 @@ class MCRLanguageEngine:
                 },
             )
 
-        # Factual answers remain on a separate evidence path. The candidate
-        # index is only a lookup accelerator; the full term-coverage gate below
-        # prevents a single accidental token hit from selecting an answer.
-        if graph.intent in {"define", "explain", "question"}:
+        query_terms = self._topic_terms(graph)
+        factual_intent = graph.intent in {
+            "topic_information", "define", "explain", "question",
+        }
+        if factual_intent and query_terms:
+            facts = self.store.search_facts(query_terms, limit=40)
+            topic = self._topic_label(graph, facts, query_terms)
+            topic_terms = set(graph.lexical_tokens) | set(query_terms)
+            topic_terms -= {"tell", "know", "about", "anything", "something", "facts"}
+            if facts:
+                composed = compose_topic_answer(topic, facts, topic_terms)
+                self.discourse.observe_graph(graph)
+                source_names = sorted({fact["source"] for fact in composed.selected_facts})
+                return Answer(
+                    text=composed.text,
+                    confidence=composed.support_score,
+                    abstained=False,
+                    selected_title=f"Composed partial knowledge about {composed.topic}",
+                    source="; ".join(source_names),
+                    diagnostics={
+                        "mode": "fact_composition",
+                        "graph": graph.summary(),
+                        "sensitivity": sensitivity.diagnostics(),
+                        "topic_answer": composed.diagnostics(),
+                        "discourse": self.discourse.snapshot(),
+                    },
+                )
+
             record, score, evidence = self._factual_candidate(graph)
             self.discourse.observe_graph(graph)
             if record is not None:
@@ -157,14 +217,19 @@ class MCRLanguageEngine:
                         "discourse": self.discourse.snapshot(),
                     },
                 )
+
+            composed = compose_topic_answer(topic, (), topic_terms)
             return Answer(
-                text="I can represent the question, but my local knowledge index does not contain enough matching, sourced evidence to answer it reliably.",
-                confidence=score,
+                text=composed.text,
+                confidence=0.0,
                 abstained=True,
+                selected_title=f"No sourced facts indexed for {composed.topic}",
+                source="Local fact store has no matching entry",
                 diagnostics={
-                    "mode": "evidence_gate",
+                    "mode": "unknown_topic",
                     "graph": graph.summary(),
                     "sensitivity": sensitivity.diagnostics(),
+                    "topic_answer": composed.diagnostics(),
                     "evidence": evidence,
                     "discourse": self.discourse.snapshot(),
                 },
