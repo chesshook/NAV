@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 import unittest
 
+from mcrl.calculator import try_calculate
 from mcrl.discourse_state import DiscourseState
 from mcrl.engine import MCRLanguageEngine
 from mcrl.knowledge import KnowledgeStore
@@ -12,6 +13,9 @@ from mcrl.meaning_solver import solve_response
 from mcrl.meaning_validator import validate_response
 from mcrl.semantic_parser import parse_meaning
 from mcrl.sensitivity import calculate_sensitivity
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class SemanticCompositionTests(unittest.TestCase):
@@ -22,18 +26,33 @@ class SemanticCompositionTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.store.close()
 
+    def load_optional_moon_sample(self) -> None:
+        """Load the demo fact file only in tests that explicitly request it."""
+        facts = ROOT / "mcrl" / "data" / "facts.jsonl"
+        self.store.import_facts_jsonl(str(facts))
+
+    def test_engine_does_not_preload_a_topic_knowledge_domain(self) -> None:
+        self.assertEqual(self.store.fact_count(), 0)
+        result = self.engine.answer("What do you know about the Moon?")
+        self.assertTrue(result.abstained)
+        self.assertEqual(result.diagnostics["mode"], "unknown_topic_or_property")
+        self.assertIn("don't know enough about Moon", result.text)
+        self.assertNotIn("white", result.text.lower())
+
     def test_nice_to_meet_u_mcr_is_composed_from_meaning(self) -> None:
         result = self.engine.answer("Nice to meet u MCR")
         self.assertEqual(result.text, "Nice to meet you too!")
         self.assertFalse(result.abstained)
-        self.assertEqual(result.diagnostics["mode"], "semantic_composition")
+        self.assertEqual(result.diagnostics["mode"], "dialogue_composition")
         self.assertEqual(result.diagnostics["verification"]["preservation"], 1.0)
 
     def test_hello_there_preserves_the_salutation_extension(self) -> None:
+        graph = parse_meaning("Hello there")
+        self.assertEqual(graph.speech_act, "social.greeting")
+        self.assertFalse(graph.by_kind("topic"))
         result = self.engine.answer("Hello there")
         self.assertEqual(result.text, "Hello there!")
         self.assertFalse(result.abstained)
-        self.assertEqual(result.diagnostics["mode"], "semantic_composition")
         self.assertTrue(result.diagnostics["verification"]["valid"])
 
     def test_are_u_there_is_a_presence_check_not_a_clarification(self) -> None:
@@ -61,14 +80,15 @@ class SemanticCompositionTests(unittest.TestCase):
         self.assertTrue(all(graph.predicate == "meeting" for graph in graphs))
         self.assertTrue(all(graph.edge_targets("addressee") for graph in graphs))
 
-    def test_moon_topic_answer_uses_sourced_partial_facts(self) -> None:
+    def test_moon_topic_answer_uses_only_explicitly_loaded_facts(self) -> None:
+        self.load_optional_moon_sample()
         result = self.engine.answer("Tell me about the Moon")
         self.assertFalse(result.abstained)
         self.assertEqual(result.diagnostics["mode"], "fact_composition")
         self.assertIn("bright, almost white", result.text)
         self.assertIn("dark-gray", result.text)
-        self.assertIn("reflecting sunlight", result.text)
-        self.assertIn("only have a few sourced basics", result.text)
+        self.assertIn("reflected from its surface", result.text)
+        self.assertTrue(result.diagnostics["topic_answer"]["sources"])
         self.assertTrue(
             any(
                 source["url"].startswith("https://science.nasa.gov/")
@@ -77,23 +97,35 @@ class SemanticCompositionTests(unittest.TestCase):
         )
 
     def test_what_do_you_know_about_moon_maps_to_the_same_topic(self) -> None:
-        result = self.engine.answer("What do you know about the moon?")
+        self.load_optional_moon_sample()
+        result = self.engine.answer("What do u know about the moon?")
         self.assertFalse(result.abstained)
         self.assertEqual(result.diagnostics["mode"], "fact_composition")
         self.assertIn("bright, almost white", result.text)
 
     def test_moon_followup_resolves_it_and_selects_size_fact(self) -> None:
+        self.load_optional_moon_sample()
         first = self.engine.answer("Tell me about the Moon")
         second = self.engine.answer("Is it big?")
         self.assertFalse(first.abstained)
         self.assertFalse(second.abstained)
-        self.assertIn("one-quarter as wide as Earth", second.text)
+        self.assertIn("one-fourth as wide as Earth", second.text)
         self.assertTrue(
             any(
                 item["predicate"] == "diameter_relative_to_earth"
                 for item in second.diagnostics["topic_answer"]["selected_facts"]
             )
         )
+
+    def test_distance_question_does_not_fall_back_to_unrelated_moon_facts(self) -> None:
+        self.load_optional_moon_sample()
+        result = self.engine.answer("Can u tell me how much distance is from moon to earth?")
+        self.assertTrue(result.abstained)
+        self.assertEqual(result.diagnostics["mode"], "unknown_topic_or_property")
+        self.assertIn("reliable distance fact", result.text)
+        self.assertNotIn("white", result.text.lower())
+        self.assertNotIn("dark-gray", result.text.lower())
+        self.assertEqual(result.diagnostics["topic_answer"]["selected_facts"], [])
 
     def test_fact_jsonl_import_preserves_provenance(self) -> None:
         record = {
@@ -114,7 +146,7 @@ class SemanticCompositionTests(unittest.TestCase):
             source.write_text(json.dumps(record) + "\n", encoding="utf-8")
             imported = self.store.import_facts_jsonl(str(source), batch_size=1)
         self.assertEqual(imported, 1)
-        found = self.store.search_facts(["venus"])
+        found = self.store.search_facts(["venus"], subject="Venus")
         self.assertTrue(any(item["fact_id"] == "venus-sample-fact" for item in found))
         venus = next(item for item in found if item["fact_id"] == "venus-sample-fact")
         self.assertEqual(venus["source_url"], "https://example.org/venus")
@@ -123,11 +155,53 @@ class SemanticCompositionTests(unittest.TestCase):
     def test_unknown_topic_is_admitted_without_fabricating_a_fact(self) -> None:
         result = self.engine.answer("Anything about Neptune?")
         self.assertTrue(result.abstained)
-        self.assertEqual(result.diagnostics["mode"], "unknown_topic")
-        self.assertIn("don't have reliable facts about Neptune", result.text)
+        self.assertEqual(result.diagnostics["mode"], "unknown_topic_or_property")
+        self.assertIn("don't know enough about Neptune", result.text)
         self.assertNotIn("Neptune is", result.text)
 
+    def test_unrelated_new_topic_does_not_inherit_previous_topic(self) -> None:
+        first = self.engine.answer("Anything about Neptune?")
+        second = self.engine.answer("What is the capital of France?")
+        self.assertTrue(first.abstained)
+        self.assertTrue(second.abstained)
+        self.assertIn("France", second.text)
+        self.assertNotIn("Neptune", second.text)
+        self.assertEqual(second.diagnostics["discourse"]["last_topic"], "France")
+
+    def test_calculation_is_independent_of_previous_topic(self) -> None:
+        self.engine.answer("Anything about Neptune?")
+        result = self.engine.answer("Can u tell me the value of sum of 4 and 5?")
+        self.assertFalse(result.abstained)
+        self.assertEqual(result.diagnostics["mode"], "calculation")
+        self.assertEqual(result.diagnostics["result"], 9)
+        self.assertEqual(result.text, "4 + 5 = 9.")
+        self.assertNotIn("Neptune", result.text)
+
+    def test_sum_extraction_is_safe_and_bounded(self) -> None:
+        result = try_calculate("What is the sum of 4 and 5?")
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result.result, 9)
+        self.assertIsNone(try_calculate("sum of 4 and __import__('os').system('whoami')"))
+
+    def test_thats_great_is_acknowledged_without_overwriting_topic(self) -> None:
+        self.engine.answer("Anything about Neptune?")
+        result = self.engine.answer("thats great")
+        self.assertFalse(result.abstained)
+        self.assertEqual(result.diagnostics["mode"], "dialogue_composition")
+        self.assertEqual(result.diagnostics["response_plan"]["act"], "acknowledge_positive_statement")
+        self.assertEqual(result.diagnostics["discourse"]["last_topic"], "Neptune")
+        self.assertIn("glad", result.text.lower())
+
+    def test_dont_tell_me_about_topic_is_acknowledged_as_a_boundary(self) -> None:
+        result = self.engine.answer("dont tell me anything about moon")
+        self.assertFalse(result.abstained)
+        self.assertEqual(result.diagnostics["mode"], "dialogue_composition")
+        self.assertEqual(result.diagnostics["response_plan"]["act"], "acknowledge_topic_avoidance")
+        self.assertIn("won’t bring up moon", result.text.lower())
+
     def test_color_question_selects_only_color_facts(self) -> None:
+        self.load_optional_moon_sample()
         result = self.engine.answer("What color is the Moon?")
         self.assertFalse(result.abstained)
         predicates = {
@@ -171,7 +245,7 @@ class SemanticCompositionTests(unittest.TestCase):
         result = self.engine.answer("what?")
         self.assertEqual(result.text, "What would you like me to clarify?")
         self.assertFalse(result.abstained)
-        self.assertEqual(result.diagnostics["mode"], "semantic_composition")
+        self.assertEqual(result.diagnostics["mode"], "dialogue_composition")
         self.assertTrue(result.diagnostics["verification"]["valid"])
 
     def test_greeting_graph_connects_speaker_and_addressee_to_event(self) -> None:
@@ -215,16 +289,13 @@ class SemanticCompositionTests(unittest.TestCase):
         ])
         result = self.engine.answer("What is recurrent quantum machinery?")
         self.assertTrue(result.abstained)
-        self.assertEqual(result.diagnostics["mode"], "unknown_topic")
-        self.assertLess(
-            result.diagnostics["evidence"]["term_coverage"],
-            0.70,
-        )
+        self.assertEqual(result.diagnostics["mode"], "unknown_topic_or_property")
+        self.assertNotIn("Recurrent situation model", result.text)
 
     def test_unknown_factual_question_abstains(self) -> None:
         result = self.engine.answer("What is an unknown semantic mechanism?")
         self.assertTrue(result.abstained)
-        self.assertIn("don't have reliable facts", result.text)
+        self.assertIn("don't know enough", result.text.lower())
 
 
 if __name__ == "__main__":
