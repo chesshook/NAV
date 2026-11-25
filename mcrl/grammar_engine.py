@@ -24,6 +24,8 @@ class SentenceAST:
             return " ".join(word for word in words if word).strip() + "!"
         if self.construction == "single_word_greeting":
             return (self.fixed_lexemes[0] if self.fixed_lexemes else "Hello") + "!"
+        if self.construction == "presence_confirmation":
+            return "Yes, I am here!"
         if self.construction == "gratitude_acknowledgement":
             return "You're welcome!"
         if self.construction == "farewell":
@@ -65,6 +67,8 @@ class GrammarEngine:
                 construction="single_word_greeting",
                 fixed_lexemes=(self.lexical.choose_greeting(source),),
             )
+        if response.act == "confirm_presence":
+            return SentenceAST(construction="presence_confirmation")
         if response.act == "acknowledge_gratitude":
             return SentenceAST(construction="gratitude_acknowledgement")
         if response.act == "reciprocate_farewell":
