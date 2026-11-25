@@ -215,27 +215,42 @@ def analyze_pragmatics(words: tuple[str, ...]) -> PragmaticSignals:
     )
 
     if user_gate:
+        user_evidence = {
+            **user_pattern,
+            "identity_pattern": max(
+                user_pattern["direct_question"], user_pattern["embedded_question"]
+            ),
+            "user_reference": user_pattern["first_person_reference"],
+        }
         candidates.append(_weighted_candidate(
             "identity_question", "user",
-            user_pattern,
+            user_evidence,
             {
-                "direct_question": 0.38,
-                "embedded_question": 0.32,
-                "first_person_reference": 0.18,
-                "interrogative_frame": 0.07,
-                "assistant_knowledge_frame": 0.05,
+                "identity_pattern": 0.78,
+                "user_reference": 0.17,
+                "interrogative_frame": 0.05,
             },
             ("identity_target_must_be_user", "must_not_extract_am_as_topic"),
         ))
     if assistant_gate:
+        assistant_evidence = {
+            **assistant_pattern,
+            "identity_pattern": max(
+                assistant_pattern["direct_question"],
+                assistant_pattern["name_request"],
+                assistant_pattern["self_reference"],
+            ),
+            "assistant_reference": max(
+                assistant_pattern["addressee_reference"],
+                assistant_pattern["self_reference"],
+            ),
+        }
         candidates.append(_weighted_candidate(
             "identity_question", "assistant",
-            assistant_pattern,
+            assistant_evidence,
             {
-                "direct_question": 0.38,
-                "name_request": 0.32,
-                "self_reference": 0.22,
-                "addressee_reference": 0.08,
+                "identity_pattern": 0.82,
+                "assistant_reference": 0.18,
             },
             ("identity_target_must_be_assistant", "must_not_create_world_topic"),
         ))
