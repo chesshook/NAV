@@ -126,6 +126,11 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
     elif identity:
         speech_act = "request.identity"
         intent = "identity"
+    elif ("?" in parts or (words and words[0] in QUESTION_WORDS)) and not lexical_tokens:
+        # A bare wh-word has no topic or proposition to retrieve. Treat it as
+        # conversational repair: ask the speaker what needs clarification.
+        speech_act = "request.clarification"
+        intent = "clarification"
     elif "?" in parts or (words and words[0] in QUESTION_WORDS):
         speech_act = "request.information"
         intent = (
@@ -143,6 +148,13 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
     act_id = add(speech_act, "speech_act", speech_act)
     if meeting:
         event_id = add("event.meeting", "event", "meeting", next((w for w in words if w in MEETING_WORDS), "meet"))
+        builder.edge(act_id, event_id, "has_event")
+    elif greeting or gratitude or farewell or wellbeing:
+        social_event = (
+            "greeting" if greeting else "gratitude" if gratitude
+            else "farewell" if farewell else "wellbeing_question"
+        )
+        event_id = add(f"event.{social_event}", "event", social_event)
         builder.edge(act_id, event_id, "has_event")
     elif main_verb is not None:
         event_id = add(f"event.{VERBS[main_verb]}", "event", VERBS[main_verb], main_verb)
@@ -169,7 +181,7 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
         neg_id = add("operator.negation", "polarity", "negative")
         if event_id is not None:
             builder.edge(neg_id, event_id, "negates")
-    else:
+    elif speech_act.startswith("social."):
         add("operator.affirmation", "polarity", "positive")
 
     if temporal != "unspecified":
