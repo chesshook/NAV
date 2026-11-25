@@ -1,6 +1,6 @@
-# MCR-L 0.2: active mathematical specification
+# MCR-L 0.3: active mathematical specification
 
-This document describes the semantic-composition branch. It distinguishes implemented formulas from research goals. It does not claim general intelligence.
+This document describes implemented mechanisms in the semantic-composition branch. It distinguishes hand-authored engineering assumptions from learned or empirically established facts.
 
 ## 1. Typed meaning graph
 
@@ -10,95 +10,102 @@ An utterance is mapped to:
 G=(V,E,A)
 \]
 
-- \(V\): typed meaning nodes (speech act, event, participant, polarity, affect, time, comparison, topic).
-- \(E\): typed role edges (speaker, addressee, has-event, negates, temporal-scope, comparison).
-- \(A\): node attributes such as surface form and parser confidence.
+- \(V\): typed nodes for speech acts, events, participants, polarity, affect, time, comparison, and topics.
+- \(E\): semantic-role edges such as speaker, addressee, asker, target, agent, patient, has-event, and negates.
+- \(A\): node attributes, including the source surface form and parser confidence.
 
-The graph is the working representation. The original word sequence is retained as evidence for lexicalization and factual lookup, not used as the sole semantic representation.
+For example, “Are u there?” should create a request.presence_check act, a presence_check event, a user asker, and an assistant target. The system does not derive this from the word “there” alone: it needs a second-person participant and a question-like construction.
 
 ## 2. Counterfactual sensitivity
 
-The implementation computes a structural utility \(U(G)\) from represented node kinds and relation edges. For each node \(v_i\), it removes that node and its incident edges:
+The implementation computes structural utility \(U(G)\) from node kinds and relation edges. For every node \(v_i\), it removes that node and its incident edges:
 
 \[
 S_i=\max(0,U(G)-U(G\setminus v_i))
 \]
 
-Then it normalizes:
+Then:
 
 \[
 w_i=\frac{S_i}{\sum_j S_j+\epsilon}
 \]
 
-where \(\epsilon\) prevents division by zero. If all losses are zero, the implementation assigns a uniform distribution over nodes.
-
-These weights indicate which represented components are structurally important to the current graph. They are not learned truths about human meaning; the category and edge weights are explicit engineering hypotheses.
+If every loss is zero, the implementation assigns a uniform distribution over the nodes. These weights express the importance of represented graph components under hand-authored utility weights; they are not learned truths about human meaning.
 
 ## 3. Response-meaning selection
 
-The response planner constructs semantic response candidates before the grammar engine selects words. Its candidate score is:
+The planner evaluates response meanings before the grammar engine chooses words:
 
 \[
 J(R)=\sum_k W_k P_k(R)+T(R)+B(R)-M(R)
 \]
 
 where:
-- \(W_k\) is the aggregated sensitivity for a semantic kind;
-- \(P_k(R)\) is whether candidate \(R\) preserves that kind;
-- \(T(R)\) is task/pragmatic fit;
-- \(B(R)\) is a small candidate utility bias;
-- \(M(R)\) is a missing-requirement penalty.
+- \(W_k\): aggregated sensitivity for semantic kind \(k\);
+- \(P_k(R)\): whether response plan \(R\) preserves that kind;
+- \(T(R)\): pragmatic/task fit;
+- \(B(R)\): a small candidate utility term;
+- \(M(R)\): missing-requirement penalty.
 
-For a positive meeting pleasantry, a reciprocal-meeting response preserves the event, positive affect, participant roles, and social act. A generic acknowledgement preserves fewer of those details and should therefore score lower.
+The current supported candidates include reciprocal greeting, reciprocal meeting pleasantry, gratitude acknowledgement, farewell, wellbeing, identity, clarification, and presence confirmation. This is a deliberately finite response-operator set.
 
 ## 4. Concept-local lexical selection
 
-The lexical compiler does not rank every word in the vocabulary. It ranks candidates attached to one concept:
+The lexical compiler ranks candidates attached to a selected concept, rather than ranking the entire vocabulary:
 
 \[
 L^*=\arg\max_{\ell\in Lex(c)}
 (0.42P+0.22G+0.20R-0.16A+0.30Q)
 \]
 
-where:
-- \(P\): semantic precision;
-- \(G\): grammar fit;
-- \(R\): register fit;
-- \(A\): ambiguity penalty;
-- \(Q\): lexical reuse bonus when the input's modifier is a suitable output choice.
+\(P\) is semantic precision, \(G\) grammar fit, \(R\) register fit, \(A\) ambiguity penalty, and \(Q\) lexical reuse preference. Candidate values are hand-authored in the current prototype.
 
-The candidate set for the positive-meeting modifier is currently a short hand-authored list (nice, glad, pleased, delighted, happy). It is not a trained language model.
+## 5. Grammar and meaning verification
 
-## 5. Grammar and verification
-
-The grammar engine builds a small syntax AST from semantic roles and linearizes it. The result is parsed again. For each response plan, required semantic checks are evaluated:
+The grammar engine constructs a small syntax AST and linearizes it. The resulting text is parsed again. For each supported response operator, required checks are evaluated:
 
 \[
 V(Y,R)=\frac{\text{passed required checks}}{\text{number of required checks}}
 \]
 
-A response is emitted as successful only when every current required check passes. This verifier is limited by the parser and check list; it cannot guarantee that a sentence is correct in every broader linguistic context.
+The CLI's meaning-preservation score is this ratio. It is not a global semantic similarity measure; it is only as strong as the parser and the required checks for that response operator.
 
-## 6. Separate factual evidence score
+## 6. Atomic sourced facts
 
-Factual questions use the disk-backed knowledge store only as a candidate generator. For candidate record \(d\):
+A semantic fact is stored as:
 
 \[
-E(d)=0.72C+0.18T+0.10S
+f=(s,p,o,c,e,r,u,t)
 \]
 
-- \(C\): fraction of distinct query content terms appearing in record title/text/answer/keywords/tags;
-- \(T\): fraction of query content terms appearing in the title;
-- \(S\): 1 when a source is recorded, otherwise 0.
+where:
+- \(s\): subject;
+- \(p\): predicate;
+- \(o\): object/value;
+- \(c\): manually supplied confidence metadata in \([0,1]\);
+- \(e\): epistemic status (established, qualified, tentative);
+- \(r\): source/attribution;
+- \(u\): source URL;
+- \(t\): aliases and tags.
 
-The candidate must also have at least 0.70 term coverage, a non-empty source, a non-empty answer, and an overall score at or above the configured threshold. This is a heuristic gate, not a probability calibration or full entailment checker.
+SQLite stores the records on disk. FTS5, when available, generates candidates from subject, aliases, predicate, object, and tags. Candidate priority is explicit metadata, not a learned relevance model.
 
-## 7. Legacy 0.1 mechanisms
+## 7. Epistemic topic response
 
-The 0.1 recurrent feature vector, evidence-plan score, and finite-difference score sensitivity are retained in older modules for comparison, but they are not on the 0.2 active answer path. The current active sensitivity is counterfactual ablation of meaning-graph nodes.
+The topic responder selects fact predicates according to the user's query properties. For example, a Moon color question favors apparent_color_from_earth and surface_color_up_close; a size follow-up favors diameter_relative_to_earth.
+
+The wording uses a cautious lead-in because the local store is small. Each factual clause corresponds to a selected fact. If no fact and no adequate sourced document record are available, the system explicitly says it lacks reliable local knowledge and does not invent a filler claim.
+
+The CLI's fact-support score is:
+
+\[
+C_{\text{answer}}=\min_{f\in F_{\text{selected}}} c_f
+\]
+
+It is a simple metadata floor, not calibrated factual probability. The presence of a URL does not alone guarantee source correctness; fact curation remains a human responsibility.
 
 ## 8. What remains unsolved
 
-The formulas do not produce concepts, grammar, grounding, or truth criteria by themselves. This branch still needs wider lexical coverage, morphology, robust syntactic role assignment, entity linking, reference resolution, compositional operators, typed factual relations, contradiction checks, and held-out evaluation.
+The formulas do not produce concepts, grammar, grounding, or truth criteria by themselves. Broader work is still needed on syntax, morphology, scope, anaphora, logical operators, relation learning, contradiction detection, source freshness, confidence calibration, and held-out evaluation.
 
-A GPU-free runtime is a hardware constraint—not an accuracy or intelligence benchmark.
+A GPU-free runtime is a hardware property—not an accuracy or intelligence benchmark.
