@@ -26,6 +26,24 @@ class SemanticCompositionTests(unittest.TestCase):
         self.assertEqual(result.diagnostics["mode"], "semantic_composition")
         self.assertEqual(result.diagnostics["verification"]["preservation"], 1.0)
 
+    def test_bare_what_is_a_clarification_request_not_a_fact_lookup(self) -> None:
+        graph = parse_meaning("what?")
+        self.assertEqual(graph.speech_act, "request.clarification")
+        self.assertEqual(graph.lexical_tokens, ())
+        self.assertFalse(graph.by_kind("polarity"))
+        result = self.engine.answer("what?")
+        self.assertEqual(result.text, "What would you like me to clarify?")
+        self.assertFalse(result.abstained)
+        self.assertEqual(result.diagnostics["mode"], "semantic_composition")
+        self.assertTrue(result.diagnostics["verification"]["valid"])
+
+    def test_greeting_graph_connects_speaker_and_addressee_to_event(self) -> None:
+        graph = parse_meaning("hi")
+        self.assertEqual(graph.speech_act, "social.greeting")
+        self.assertEqual(graph.first("event"), "greeting")
+        self.assertEqual(graph.edge_targets("speaker")[0].value, "user")
+        self.assertEqual(graph.edge_targets("addressee")[0].value, "assistant")
+
     def test_paraphrases_share_the_same_core_event_and_speech_act(self) -> None:
         examples = (
             "Nice to meet you MCR",
