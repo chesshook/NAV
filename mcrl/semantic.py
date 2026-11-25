@@ -40,11 +40,11 @@ FEATURE_NAMES = (
 )
 
 SOCIAL_PATTERNS = (
-    ("greeting", re.compile(r"^(hi|hello|hey|howdy|yo|good morning|good afternoon|good evening)[!.?\\s]*$")),
-    ("wellbeing", re.compile(r"^(how are you|how's it going|how are things)[!.?\\s]*$")),
-    ("thanks", re.compile(r"^(thanks|thank you|thx|many thanks|i appreciate it)[!.?\\s]*$")),
-    ("farewell", re.compile(r"^(bye|goodbye|see you|good night|see you later)[!.?\\s]*$")),
-    ("identity", re.compile(r"^(who are you|what are you|what's your name|what is your name|are you an ai|are you a bot)[!.?\\s]*$")),
+    ("greeting", re.compile(r"^(hi|hello|hey|howdy|yo|good morning|good afternoon|good evening)[!.?]*$")),
+    ("wellbeing", re.compile(r"^(how are you|how's it going|how are things)[!.?]*$")),
+    ("thanks", re.compile(r"^(thanks|thank you|thx|many thanks|i appreciate it)[!.?]*$")),
+    ("farewell", re.compile(r"^(bye|goodbye|see you|good night|see you later)[!.?]*$")),
+    ("identity", re.compile(r"^(who are you|what are you|what's your name|what is your name|are you an ai|are you a bot)[!.?]*$")),
 )
 
 SOCIAL_RESPONSES = {
@@ -58,7 +58,7 @@ SOCIAL_RESPONSES = {
 
 def classify_social(text: str) -> str | None:
     """Recognize complete, common social turns before factual retrieval."""
-    normalized = re.sub(r"\\s+", " ", (text or "").lower()).strip()
+    normalized = " ".join((text or "").lower().split())
     for intent, pattern in SOCIAL_PATTERNS:
         if pattern.fullmatch(normalized):
             return intent
@@ -105,7 +105,7 @@ def _intent(text: str) -> str:
 
 def parse_semantics(text: str) -> SemanticFrame:
     original = (text or "").strip()
-    normalized = re.sub(r"\s+", " ", original.lower()).strip()
+    normalized = " ".join((text or "").lower().split())
     words = tokenize(normalized)
     content = tuple(w for w in words if w not in STOPWORDS and len(w) > 1)
     intent = _intent(normalized)
