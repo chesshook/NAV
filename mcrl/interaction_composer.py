@@ -128,7 +128,9 @@ def _is_prohibited_identity_disclosure(words: tuple[str, ...]) -> bool:
     disclosure_verb = bool(set(words) & {"tell", "say", "explain", "describe", "reveal"})
     identity_content = (
         _has_phrase(words, ("who", "you", "are"))
+        or _has_phrase(words, ("who", "are", "you"))
         or _has_phrase(words, ("what", "you", "are"))
+        or _has_phrase(words, ("what", "are", "you"))
         or _has_phrase(words, ("your", "name"))
         or "yourself" in words
     )
