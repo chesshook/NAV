@@ -45,9 +45,20 @@ class DiscourseState:
                 self.recent_entities.append(cleaned)
         self.recent_entities = self.recent_entities[-12:]
 
+    def remember_topic(self, topic: str) -> None:
+        cleaned = str(topic or "").strip()
+        if cleaned:
+            self.last_topic = cleaned
+            self.recent_entities.append(cleaned)
+            self.recent_entities = self.recent_entities[-12:]
+
     def observe_graph(self, graph) -> None:
         self.last_speech_act = graph.speech_act
-        topics = [node.value for node in graph.nodes if node.kind in {"topic", "entity"}]
+        resolved = [node.value for node in graph.nodes if node.concept == "topic.resolved"]
+        if resolved:
+            topics = resolved
+        else:
+            topics = [node.value for node in graph.nodes if node.kind in {"topic", "entity"}]
         self.observe_parse(graph.tokens, tuple(topics))
 
     def snapshot(self) -> dict:

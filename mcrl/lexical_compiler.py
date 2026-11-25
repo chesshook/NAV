@@ -53,10 +53,12 @@ class LexicalCompiler:
     def choose_greeting(graph: SemanticGraph) -> str:
         # A greeting is lexicalized from the recognized speech act, while the
         # wording remains a local choice rather than a corpus retrieval.
+        base = "Hello"
         for candidate in ("hello", "hi", "hey"):
             if candidate in graph.tokens:
-                return candidate.capitalize()
-        return "Hello"
+                base = candidate.capitalize()
+                break
+        return base + (" there" if graph.has("marker.salutation_extension") else "")
 
     @staticmethod
     def choose_farewell(graph: SemanticGraph) -> str:

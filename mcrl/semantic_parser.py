@@ -1,7 +1,8 @@
-"""Compositional parser for the first bounded MCR-L grammar.
+"""Compositional parser for conversational acts, topic requests, and simple events.
 
-The parser builds a typed graph from lexical concepts and their roles. It uses
-multiword/lexical meaning plus small grammar rules, not whole-input reply lookup.
+This parser builds a typed graph. It deliberately preserves grammar words until
+speech-act and event patterns have been checked, so words such as "are", "there",
+and "you" cannot disappear before the parser decides what they mean.
 """
 from __future__ import annotations
 
@@ -21,15 +22,9 @@ STOPWORDS = {
 }
 
 POSITIVE_MODIFIERS = {
-    "nice": "nice",
-    "glad": "glad",
-    "pleased": "pleased",
-    "happy": "happy",
-    "great": "great",
-    "good": "good",
-    "wonderful": "wonderful",
-    "delighted": "delighted",
-    "pleasure": "pleased",
+    "nice": "nice", "glad": "glad", "pleased": "pleased", "happy": "happy",
+    "great": "great", "good": "good", "wonderful": "wonderful",
+    "delighted": "delighted", "pleasure": "pleased",
 }
 MEETING_WORDS = {"meet", "meets", "meeting", "met"}
 GREETING_WORDS = {"hi", "hello", "hey", "howdy", "yo"}
@@ -54,11 +49,27 @@ VERBS = {
     "use": "use", "uses": "use", "compare": "compare", "compares": "compare",
     "help": "help", "helps": "help", "delete": "delete", "remove": "remove",
     "install": "install", "open": "open", "play": "play", "prefer": "prefer",
+    "tell": "tell", "say": "say", "ask": "ask", "check": "check",
 }
 ASSISTANT_ALIASES = {"mcr", "mcrl", "assistant", "chatgpt"}
 SECOND_PERSON = {"you", "u", "ya", "your", "yours"}
 FIRST_PERSON = {"i", "me", "my", "mine", "we", "us", "our"}
 RECIPROCITY_WORDS = {"too", "also", "likewise", "either", "as-well"}
+PRESENCE_CUES = {"there", "around", "online", "available", "here"}
+ANAPHORS = {"it", "this", "that", "they", "them", "those", "these"}
+
+TOPIC_REQUEST_PREFIXES = (
+    ("what", "can", "you", "tell", "me", "about"),
+    ("what", "do", "you", "know", "about"),
+    ("tell", "me", "something", "about"),
+    ("tell", "me", "one", "thing", "about"),
+    ("give", "me", "facts", "about"),
+    ("say", "something", "about"),
+    ("tell", "me", "about"),
+    ("anything", "about"),
+    ("something", "about"),
+    ("what", "about"),
+)
 
 
 def _has(words: tuple[str, ...], choices: set[str]) -> bool:
@@ -70,15 +81,46 @@ def _contains_phrase(words: tuple[str, ...], phrase: tuple[str, ...]) -> bool:
     return any(words[i:i + width] == phrase for i in range(len(words) - width + 1))
 
 
+def _topic_prefix_length(words: tuple[str, ...]) -> int:
+    for prefix in TOPIC_REQUEST_PREFIXES:
+        if words[:len(prefix)] == prefix:
+            return len(prefix)
+    return 0
+
+
+def _is_presence_check(words: tuple[str, ...], has_question_mark: bool) -> bool:
+    has_person = _has(words, SECOND_PERSON) or _has(words, ASSISTANT_ALIASES)
+    has_presence = _has(words, PRESENCE_CUES)
+    has_question_form = has_question_mark or _has(words, {"are", "is", "can", "still", "you"})
+    return has_person and has_presence and has_question_form
+
+
+def _is_presence_confirmation(words: tuple[str, ...]) -> bool:
+    return (
+        _contains_phrase(words, ("i", "am", "here"))
+        or _contains_phrase(words, ("i'm", "here"))
+        or _contains_phrase(words, ("im", "here"))
+        or _contains_phrase(words, ("i", "am", "online"))
+        or _contains_phrase(words, ("i'm", "online"))
+    )
+
+
 def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
     original = (text or "").strip()
     parts = TOKEN_RE.findall(original)
     words = tuple(part.lower() for part in parts if part not in {"?", "!", ".", ",", ";", ":"})
     normalized = " ".join(words)
-    lexical_tokens = tuple(
-        word for word in words
+    topic_prefix = _topic_prefix_length(words)
+    topic_source = words[topic_prefix:] if topic_prefix else words
+
+    lexical_tokens = () if _is_presence_confirmation(words) else tuple(
+        word for word in topic_source
         if word not in STOPWORDS and len(word) > 1
     )
+    # Resolve simple anaphors against the most recent explicit discourse topic.
+    resolved_topic = ""
+    if discourse is not None and _has(words, ANAPHORS):
+        resolved_topic = discourse.last_topic
 
     builder = MeaningGraphBuilder()
     node_ids: dict[str, int] = {}
@@ -102,13 +144,22 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
         or _contains_phrase(words, ("what", "are", "you"))
         or _contains_phrase(words, ("what", "is", "your", "name"))
     )
+    has_question_mark = "?" in parts
+    presence_check = _is_presence_check(words, has_question_mark)
+    presence_confirmation = _is_presence_confirmation(words)
     negated = _has(words, NEGATION_WORDS)
     temporal = "before" if _has(words, BEFORE_WORDS) else "after" if _has(words, AFTER_WORDS) else "present" if _has(words, PRESENT_WORDS) else "unspecified"
     comparison = "more_than" if _has(words, MORE_WORDS) and "than" in words else "less_than" if _has(words, LESS_WORDS) and "than" in words else "none"
     verb_position = next((index for index, word in enumerate(words) if word in VERBS), None)
     main_verb = words[verb_position] if verb_position is not None else None
 
-    if meeting and modifiers and not negated:
+    if presence_check:
+        speech_act = "request.presence_check"
+        intent = "presence_check"
+    elif topic_prefix:
+        speech_act = "request.topic_information"
+        intent = "topic_information"
+    elif meeting and modifiers and not negated:
         speech_act = "social.pleasantry"
         intent = "social"
     elif greeting:
@@ -126,12 +177,13 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
     elif identity:
         speech_act = "request.identity"
         intent = "identity"
-    elif ("?" in parts or (words and words[0] in QUESTION_WORDS)) and not lexical_tokens:
-        # A bare wh-word has no topic or proposition to retrieve. Treat it as
-        # conversational repair: ask the speaker what needs clarification.
+    elif presence_confirmation:
+        speech_act = "response.presence_confirmation"
+        intent = "statement"
+    elif (has_question_mark or (words and words[0] in QUESTION_WORDS)) and not lexical_tokens and not resolved_topic:
         speech_act = "request.clarification"
         intent = "clarification"
-    elif "?" in parts or (words and words[0] in QUESTION_WORDS):
+    elif has_question_mark or (words and words[0] in QUESTION_WORDS):
         speech_act = "request.information"
         intent = (
             "define" if words[:2] == ("what", "is") or words[:2] == ("what", "are")
@@ -146,7 +198,13 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
         intent = "statement"
 
     act_id = add(speech_act, "speech_act", speech_act)
-    if meeting:
+    if presence_check:
+        event_id = add("event.presence_check", "event", "presence_check")
+        builder.edge(act_id, event_id, "has_event")
+    elif presence_confirmation:
+        event_id = add("event.presence_confirmation", "event", "presence_confirmation")
+        builder.edge(act_id, event_id, "has_event")
+    elif meeting:
         event_id = add("event.meeting", "event", "meeting", next((w for w in words if w in MEETING_WORDS), "meet"))
         builder.edge(act_id, event_id, "has_event")
     elif greeting or gratitude or farewell or wellbeing:
@@ -163,13 +221,15 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
         event_id = None
 
     if modifiers:
-        modifier_word, modifier_value = modifiers[0]
+        modifier_word, _modifier_value = modifiers[0]
         affect_id = add("affect.positive", "affect", "positive", modifier_word)
         if event_id is not None:
             builder.edge(event_id, affect_id, "has_modifier")
 
     if greeting:
         add("act.greet", "speech_content", "greeting", next((w for w in words if w in GREETING_WORDS), "hello"))
+        if "there" in words:
+            add("marker.salutation_extension", "discourse_marker", "there", "there")
     if gratitude:
         add("act.thank", "speech_content", "gratitude")
     if farewell:
@@ -181,7 +241,7 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
         neg_id = add("operator.negation", "polarity", "negative")
         if event_id is not None:
             builder.edge(neg_id, event_id, "negates")
-    elif speech_act.startswith("social."):
+    elif speech_act.startswith("social.") or speech_act == "response.presence_confirmation":
         add("operator.affirmation", "polarity", "positive")
 
     if temporal != "unspecified":
@@ -199,8 +259,6 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
         if event_id is not None:
             builder.edge(event_id, reciprocal_id, "reciprocated_by")
 
-    # Participant resolution is semantic: grammatical person and the alias
-    # refer to discourse roles, not search keywords.
     has_second_person = _has(words, SECOND_PERSON)
     mentions_assistant = _has(words, ASSISTANT_ALIASES)
     has_first_person = _has(words, FIRST_PERSON)
@@ -208,14 +266,33 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
         has_second_person = has_second_person or discourse.has_assistant_reference(words)
         mentions_assistant = mentions_assistant or discourse.has_assistant_reference(words)
 
-    user_id = add("entity.user", "participant", "user") if has_first_person or speech_act.startswith("social.") or speech_act == "request.action" else None
-    assistant_id = add("entity.assistant", "participant", "assistant") if has_second_person or mentions_assistant or speech_act.startswith("social.") else None
+    user_id = (
+        add("entity.user", "participant", "user")
+        if has_first_person or speech_act.startswith("social.") or speech_act in {"request.presence_check", "response.presence_confirmation", "request.action"}
+        else None
+    )
+    assistant_id = (
+        add("entity.assistant", "participant", "assistant")
+        if has_second_person or mentions_assistant or speech_act.startswith("social.") or speech_act in {"request.presence_check", "response.presence_confirmation"}
+        else None
+    )
+
     if event_id is not None:
         if speech_act.startswith("social."):
             if user_id is not None:
                 builder.edge(event_id, user_id, "speaker")
             if assistant_id is not None:
                 builder.edge(event_id, assistant_id, "addressee")
+        elif speech_act == "request.presence_check":
+            if user_id is not None:
+                builder.edge(event_id, user_id, "asker")
+            if assistant_id is not None:
+                builder.edge(event_id, assistant_id, "target")
+        elif speech_act == "response.presence_confirmation":
+            if assistant_id is not None:
+                builder.edge(event_id, assistant_id, "speaker")
+            if user_id is not None:
+                builder.edge(event_id, user_id, "recipient")
         elif verb_position is not None:
             before_verb = words[:verb_position]
             after_verb = words[verb_position + 1:]
@@ -230,22 +307,28 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
             if speech_act == "request.action" and user_id is not None and not before_verb:
                 builder.edge(event_id, user_id, "agent")
 
-    # Store the explicit assistant alias as a reference, not as a topical noun.
     if mentions_assistant:
         add("entity.assistant", "entity", "MCR", "MCR")
 
     if main_verb is not None:
         add(f"predicate.{VERBS[main_verb]}", "predicate", VERBS[main_verb], main_verb)
 
-    # Keep named surface entities and unresolved content as topic nodes.
-    known = set(POSITIVE_MODIFIERS) | MEETING_WORDS | GREETING_WORDS | GRATITUDE_WORDS | FAREWELL_WORDS | NEGATION_WORDS | BEFORE_WORDS | AFTER_WORDS | PRESENT_WORDS | MORE_WORDS | LESS_WORDS | set(VERBS) | ASSISTANT_ALIASES | SECOND_PERSON | FIRST_PERSON
+    if resolved_topic:
+        add("topic.resolved", "topic", resolved_topic, next((word for word in words if word in ANAPHORS), "it"), 0.85)
+    non_topical = GREETING_WORDS | GRATITUDE_WORDS | FAREWELL_WORDS | MEETING_WORDS | set(POSITIVE_MODIFIERS)
+    for word in lexical_tokens:
+        if word not in non_topical:
+            add("topic.lexical", "topic", word, word, 0.70)
+
+    known = (
+        set(POSITIVE_MODIFIERS) | MEETING_WORDS | GREETING_WORDS | GRATITUDE_WORDS
+        | FAREWELL_WORDS | NEGATION_WORDS | BEFORE_WORDS | AFTER_WORDS | PRESENT_WORDS
+        | MORE_WORDS | LESS_WORDS | set(VERBS) | ASSISTANT_ALIASES | SECOND_PERSON
+        | FIRST_PERSON | QUESTION_WORDS | STOPWORDS
+    )
     for raw in parts:
         lower = raw.lower()
-        if raw[:1].isupper() and lower not in known and len(raw) > 1:
+        if raw[:1].isupper() and lower not in known and lower not in lexical_tokens and len(raw) > 1:
             add("entity.named", "entity", raw, raw)
-    for word in lexical_tokens:
-        if word not in known and not any(node.value.lower() == word for node in builder.nodes):
-            add("topic.lexical", "topic", word, word, 0.65)
-
 
     return builder.build(original, normalized, words, lexical_tokens, intent)

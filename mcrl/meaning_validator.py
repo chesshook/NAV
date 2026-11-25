@@ -42,6 +42,14 @@ def validate_response(
         }
     elif response.act == "reciprocate_greeting":
         checks = {"greeting": reparsed.speech_act == "social.greeting"}
+        if source.has("marker.salutation_extension"):
+            checks["salutation_extension"] = "there" in text.lower()
+    elif response.act == "confirm_presence":
+        checks = {
+            "presence_confirmation": reparsed.speech_act == "response.presence_confirmation",
+            "direct_answer": "yes" in text.lower(),
+            "presence_claim": "here" in text.lower(),
+        }
     elif response.act == "acknowledge_gratitude":
         checks = {"acknowledgement": "welcome" in reparsed.tokens or "you're" in text.lower()}
     elif response.act == "reciprocate_farewell":

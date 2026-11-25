@@ -81,7 +81,7 @@ class MCRLTests(unittest.TestCase):
                 "What is the orbital phase of quasar ZY-999?"
             )
             self.assertTrue(result.abstained)
-            self.assertIn("evidence", result.text.lower())
+            self.assertIn("reliable facts", result.text.lower())
         finally:
             store.close()
 
