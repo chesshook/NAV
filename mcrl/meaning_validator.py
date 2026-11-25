@@ -44,6 +44,41 @@ def validate_response(
         checks = {"greeting": reparsed.speech_act == "social.greeting"}
         if source.has("marker.salutation_extension"):
             checks["salutation_extension"] = "there" in text.lower()
+    elif response.act == "greet_and_answer_wellbeing":
+        lower = text.lower()
+        checks = {
+            "returns_greeting": lower.startswith("hi"),
+            "answers_presence_and_availability": "ready to help" in lower,
+            "acknowledges_question": "thanks for asking" in lower,
+            "continues_reciprocally": "with you" in lower,
+        }
+    elif response.act == "acknowledge_compliment":
+        lower = text.lower()
+        checks = {
+            "acknowledges_kindness": "kind of you" in lower,
+            "does_not_claim_human_status": "i could help" in lower,
+            "keeps_conversation_open": "?" in text,
+        }
+    elif response.act == "answer_user_identity":
+        lower = text.lower()
+        checks = {
+            "states_context_limit": "shared with me in this conversation" in lower,
+            "does_not_claim_external_identity": "can't identify you independently" in lower,
+            "asks_user_preference": "call you" in lower,
+        }
+    elif response.act == "answer_capability":
+        lower = text.lower()
+        if response.predicate == "arithmetic":
+            checks = {
+                "directly_affirms_supported_capability": lower.startswith("yes"),
+                "names_arithmetic": "arithmetic" in lower,
+                "invites_operands": "numbers" in lower or "expression" in lower,
+            }
+        else:
+            checks = {
+                "admits_missing_capability": "don't have a reliable" in lower,
+                "avoids_false_claim": "pretend i can" in lower,
+            }
     elif response.act == "acknowledge_positive_statement":
         lower = text.lower()
         checks = {

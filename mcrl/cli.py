@@ -31,7 +31,7 @@ def _print_answer(engine: MCRLanguageEngine, utterance: str, debug: bool = False
 
 
 def interactive(engine: MCRLanguageEngine, debug: bool = False) -> None:
-    print("MCR-L 0.4 · topic-neutral conversational engine")
+    print("MCR-L 0.5 · pragmatic dialogue and semantic composition")
     print("Type /exit to quit. Use --debug to inspect meaning graphs and sensitivity.")
     while True:
         try:

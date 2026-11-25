@@ -24,6 +24,27 @@ class SentenceAST:
             return " ".join(word for word in words if word).strip() + "!"
         if self.construction == "single_word_greeting":
             return (self.fixed_lexemes[0] if self.fixed_lexemes else "Hello") + "!"
+        if self.construction == "greeting_and_wellbeing":
+            return "Hi! I'm here and ready to help—thanks for asking. How are things going with you?"
+        if self.construction == "compliment_acknowledgement":
+            return "That's very kind of you—I'm glad I could help. What should we tackle next?"
+        if self.construction == "user_identity_answer":
+            return (
+                "I only know what you've shared with me in this conversation. "
+                "I can't identify you independently or see private details. "
+                "What would you like me to call you?"
+            )
+        if self.construction == "capability_answer":
+            if self.verb == "arithmetic":
+                return (
+                    "Yes—I can handle basic arithmetic, including addition, subtraction, "
+                    "multiplication, and division. Give me the numbers or an expression."
+                )
+            skill = self.verb or "that task"
+            return (
+                f"I don't have a reliable {skill} capability in this prototype yet. "
+                "I should be clear about that rather than pretend I can do it."
+            )
         if self.construction == "positive_acknowledgement":
             return "Glad it helps! What should we tackle next?"
         if self.construction == "empathetic_acknowledgement":
@@ -74,6 +95,14 @@ class GrammarEngine:
                 construction="single_word_greeting",
                 fixed_lexemes=(self.lexical.choose_greeting(source),),
             )
+        if response.act == "greet_and_answer_wellbeing":
+            return SentenceAST(construction="greeting_and_wellbeing")
+        if response.act == "acknowledge_compliment":
+            return SentenceAST(construction="compliment_acknowledgement")
+        if response.act == "answer_user_identity":
+            return SentenceAST(construction="user_identity_answer")
+        if response.act == "answer_capability":
+            return SentenceAST(construction="capability_answer", verb=response.predicate)
         if response.act == "acknowledge_positive_statement":
             return SentenceAST(construction="positive_acknowledgement")
         if response.act == "acknowledge_negative_statement":

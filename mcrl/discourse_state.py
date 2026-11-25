@@ -52,7 +52,7 @@ class DiscourseState:
     def observe_graph(self, graph) -> None:
         """Advance turn state, but only explicit topic nodes may replace context."""
         self.turn_count += 1
-        self.last_speech_act = graph.speech_act
+        self.last_speech_act = "+".join(graph.speech_acts) or graph.speech_act
         resolved = [
             node.value for node in graph.nodes
             if node.concept in {"topic.target", "topic.resolved"}

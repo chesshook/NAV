@@ -1,4 +1,4 @@
-# MCR-L 0.4: active architecture and safeguards
+# MCR-L 0.5: active architecture and safeguards
 
 ## 1. Current-utterance semantic graph
 
@@ -45,19 +45,56 @@ w_i=\frac{S_i}{\sum_jS_j+\epsilon}
 
 These are explicit engineering weights, not learned measurements of human attention. The response planner evaluates pragmatic response candidates before lexical realization.
 
-## 4. Dialogue response planning
+## 4. Dialogue response planning and pragmatics
+
+A single user turn can perform more than one conversational move. The graph therefore retains a primary speech act and any secondary acts rather than overwriting them. For example:
+
+\[
+\text{Hi! How is it going?}
+\rightarrow
+\{\text{social.greeting},\text{social.wellbeing}\}
+\]
+
+A separate pragmatic interpreter distinguishes:
+- assistant identity requests from user-identity questions;
+- ability questions from missing-topic clarification;
+- compliments from factual topic mentions;
+- greetings and other social functions that coexist in one utterance.
+
+This prevents words such as "am" or "going" from being mistaken for world topics. User-identity answers are bounded by the current conversation; the system does not claim independent knowledge of the person.
 
 The current dialogue solver has explicit operators for:
 - greetings and greeting reciprocation;
-- meeting pleasantries;
-- gratitude and farewell;
-- wellbeing and identity questions;
-- presence checks;
+- meeting pleasantries, gratitude, and farewell;
+- wellbeing and presence checks;
 - incomplete-question clarification;
 - positive acknowledgement and empathetic acknowledgement;
+- compliment acknowledgement;
+- supported and unsupported capability checks;
+- assistant and user identity questions;
 - respecting a request to avoid a topic.
 
-Each operator defines required semantic effects; a grammar AST realizes the selected response meaning. Unknown statements receive a neutral conversational continuation rather than an unrelated fact.
+Each operator defines required semantic effects; a grammar AST realizes the selected response meaning. This remains a bounded pragmatic recognizer, not a general language learner.
+
+## 4.1 Interactional pragmatics
+
+A single user turn can perform multiple moves. The graph retains the primary speech act and secondary acts rather than discarding all but the first. For example:
+
+\[
+\text{Hi! How is it going?}
+\rightarrow
+\{\text{social.greeting},\text{social.wellbeing}\}
+\]
+
+The separate pragmatic interpreter distinguishes:
+- assistant identity questions from user-identity questions;
+- ability checks from incomplete-topic clarification;
+- compliments from factual topic mentions;
+- social moves that coexist in one utterance.
+
+This prevents words such as "am" and "going" from being mistaken for factual topics. Answers about the user are bounded by what the user shared in the current conversation; the system does not claim independent identity knowledge.
+
+The response planner now handles compound greeting/wellbeing turns, compliments, identity questions, and supported or unsupported capability checks. These remain bounded constructions, not broad learned language understanding.
 
 ## 5. Safe arithmetic capability
 

@@ -44,6 +44,8 @@ def _candidate_score(
         "reciprocate_meeting", "reciprocate_greeting", "acknowledge_gratitude",
         "reciprocate_farewell", "answer_wellbeing", "identify_self", "confirm_presence",
         "acknowledge_positive_statement", "acknowledge_negative_statement", "acknowledge_topic_avoidance",
+        "greet_and_answer_wellbeing", "acknowledge_compliment", "answer_user_identity",
+        "answer_capability",
     } else 0.0
     missing_requirements = sum(
         0.035 for requirement in candidate.requirements
@@ -58,7 +60,48 @@ def solve_response(
     sensitivity: SensitivityResult,
 ) -> ResponseMeaning | None:
     """Choose a response-level meaning graph by weighted preservation utility."""
-    if graph.speech_act == "social.pleasantry":
+    acts = set(graph.speech_acts)
+    if {"social.greeting", "social.wellbeing"} <= acts:
+        candidates = (
+            ResponseMeaning(
+                act="greet_and_answer_wellbeing",
+                recipient="you",
+                requirements=("return_greeting", "answer_wellbeing", "invite_reciprocity"),
+                utility=0.28,
+            ),
+        )
+    elif graph.speech_act == "social.compliment":
+        candidates = (
+            ResponseMeaning(
+                act="acknowledge_compliment",
+                affect="positive",
+                recipient="you",
+                requirements=("acknowledge_kindness", "avoid_self_aggrandizement", "continue_naturally"),
+                utility=0.25,
+            ),
+        )
+    elif graph.speech_act == "request.user_identity":
+        candidates = (
+            ResponseMeaning(
+                act="answer_user_identity",
+                recipient="you",
+                requirements=("state_context_limit", "do_not_claim_external_identity"),
+                utility=0.26,
+            ),
+        )
+    elif graph.speech_act == "request.capability":
+        capability_nodes = graph.by_kind("capability")
+        capability = capability_nodes[0].value if capability_nodes else ""
+        candidates = (
+            ResponseMeaning(
+                act="answer_capability",
+                predicate=capability,
+                recipient="you",
+                requirements=("answer_ability_directly", "state_real_capability_boundary"),
+                utility=0.26,
+            ),
+        )
+    elif graph.speech_act == "social.pleasantry":
         candidates = (
             ResponseMeaning(
                 act="reciprocate_meeting",

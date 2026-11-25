@@ -28,7 +28,13 @@
 - [ ] Improve natural topic phrase extraction for relation questions with multiple entities.
 - [ ] Add general event frames, tense/aspect, modality, and robust negation scope.
 
-## 0.5 — General composition
+## 0.5 — Pragmatic interaction and general composition
+- [x] Add a separate pragmatic interpretation layer before topic extraction and response selection.
+- [x] Preserve multiple speech acts in a compound conversational turn.
+- [x] Distinguish assistant identity, user identity, capability checks, and compliments.
+- [x] Prevent social turns and identity/capability questions from creating false factual topics.
+- [x] Add direct verb-form addition extraction to the safe arithmetic route.
+- [x] Add regression tests for the observed v0.4 failures.
 - [ ] Learn grammar and lexical relations from reviewed examples with train/validation/test splits.
 - [ ] Compose clauses with subject, object, experiencer, cause, location, time, and instrument roles.
 - [ ] Represent conjunction, disjunction, conditionals, quantifiers, and comparisons.
@@ -56,4 +62,4 @@ A milestone is promoted only after:
 7. Tests run across Python 3.10–3.13.
 8. CPU, RAM, latency, and broader language coverage are measured separately.
 
-The intended architecture remains meaning-first and CPU-first. MCR-L 0.4 is not universal understanding; it is a correction to the routing and conversational foundation that future generalization must build on.
+The intended architecture remains meaning-first and CPU-first. MCR-L 0.5 is still a bounded prototype: the pragmatic layer repairs concrete conversational distinctions but does not yet provide broad learned language understanding, a persistent user model, general common-sense reasoning, or open-ended natural-language generation. Those remain explicit research milestones.

@@ -10,6 +10,7 @@ import re
 from typing import Any
 
 from .meaning_graph import MeaningGraphBuilder, SemanticGraph
+from .pragmatics import analyze_pragmatics
 
 TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*|[?!.,;:]")
 
@@ -44,6 +45,8 @@ CONTRACTIONS = {
     "you're": ("you", "are"),
     "its": ("it", "is"),
     "it's": ("it", "is"),
+    "what's": ("what", "is"),
+    "how's": ("how", "is"),
 }
 
 POSITIVE_MODIFIERS = {
@@ -230,18 +233,23 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
     gratitude = _has(words, GRATITUDE_WORDS) or _contains_phrase(words, ("thank", "you"))
     farewell = _has(words, FAREWELL_WORDS) or _contains_phrase(words, ("see", "you"))
     wellbeing = _contains_phrase(words, ("how", "are", "you")) or _contains_phrase(words, ("how", "is", "it", "going"))
-    identity = (
-        _contains_phrase(words, ("who", "are", "you"))
-        or _contains_phrase(words, ("what", "are", "you"))
-        or _contains_phrase(words, ("what", "is", "your", "name"))
-    )
+    pragmatic = analyze_pragmatics(words)
+    identity = pragmatic.assistant_identity
+    user_identity = pragmatic.user_identity
+    capability_target = pragmatic.capability_target
+    compliment = pragmatic.compliment
     presence_check = _is_presence_check(words, has_question_mark)
     presence_confirmation = _is_presence_confirmation(words)
     prefix_length = _prefix_length(words)
     about_request = "about" in words and (
         question_form or _has(words, {"tell", "say", "give", "know", "anything", "something"})
     )
-    topic_text, topic_is_resolved = _extract_topic(words, about_request, discourse, question_form)
+    if pragmatic.prevents_topic_extraction(
+        greeting=greeting, wellbeing=wellbeing, gratitude=gratitude, farewell=farewell
+    ) or meeting:
+        topic_text, topic_is_resolved = "", False
+    else:
+        topic_text, topic_is_resolved = _extract_topic(words, about_request, discourse, question_form)
     property_words = [word for word in words if word in PROPERTY_WORDS]
     temporal = "before" if _has(words, BEFORE_WORDS) else "after" if _has(words, AFTER_WORDS) else "present" if _has(words, PRESENT_WORDS) else "unspecified"
     comparison = "more_than" if _has(words, MORE_WORDS) and "than" in words else "less_than" if _has(words, LESS_WORDS) and "than" in words else "none"
@@ -271,6 +279,14 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
         speech_act, intent = "request.presence_check", "presence_check"
     elif avoid_topic:
         speech_act, intent = "request.avoid_topic", "avoid_topic"
+    elif user_identity:
+        speech_act, intent = "request.user_identity", "identity"
+    elif identity:
+        speech_act, intent = "request.identity", "identity"
+    elif capability_target:
+        speech_act, intent = "request.capability", "capability"
+    elif compliment:
+        speech_act, intent = "social.compliment", "social"
     elif topic_text and about_request:
         speech_act, intent = "request.topic_information", "topic_information"
     elif meeting and modifiers and not negated:
@@ -318,6 +334,14 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
     act_id = add(speech_act, "speech_act", speech_act)
     if presence_check:
         event_id = add("event.presence_check", "event", "presence_check")
+    elif speech_act == "request.capability":
+        event_id = add("event.capability_check", "event", "capability_check", capability_target)
+    elif speech_act == "request.user_identity":
+        event_id = add("event.user_identity_question", "event", "user_identity_question")
+    elif speech_act == "request.identity":
+        event_id = add("event.assistant_identity_question", "event", "assistant_identity_question")
+    elif speech_act == "social.compliment":
+        event_id = add("event.compliment", "event", "compliment")
     elif presence_confirmation:
         event_id = add("event.presence_confirmation", "event", "presence_confirmation")
     elif meeting:
@@ -335,6 +359,18 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
         event_id = None
     if event_id is not None:
         builder.edge(act_id, event_id, "has_event")
+
+    # Keep independent moves in a compound turn instead of discarding all but
+    # the first label. "Hi! How is it going?" has both acts in one graph.
+    if greeting and wellbeing and speech_act == "social.greeting":
+        wellbeing_act_id = add("social.wellbeing", "speech_act", "social.wellbeing")
+        wellbeing_event_id = add(
+            "event.wellbeing_question", "event", "wellbeing_question"
+        )
+        builder.edge(wellbeing_act_id, wellbeing_event_id, "has_event")
+
+    if capability_target:
+        add("capability.target", "capability", capability_target, capability_target)
 
     if modifiers:
         affect_id = add("affect.positive", "affect", "positive", modifiers[0])
@@ -381,12 +417,18 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
     has_first_person = _has(words, FIRST_PERSON)
     user_id = (
         add("entity.user", "participant", "user")
-        if has_first_person or speech_act.startswith("social.") or speech_act in {"request.presence_check", "response.presence_confirmation", "request.action", "request.avoid_topic"}
+        if has_first_person or speech_act.startswith("social.") or speech_act in {
+            "request.presence_check", "response.presence_confirmation", "request.action",
+            "request.avoid_topic", "request.identity", "request.user_identity", "request.capability",
+        }
         else None
     )
     assistant_id = (
         add("entity.assistant", "participant", "assistant")
-        if has_second_person or mentions_assistant or speech_act.startswith("social.") or speech_act in {"request.presence_check", "response.presence_confirmation"}
+        if has_second_person or mentions_assistant or speech_act.startswith("social.") or speech_act in {
+            "request.presence_check", "response.presence_confirmation", "request.identity",
+            "request.user_identity", "request.capability",
+        }
         else None
     )
 
@@ -406,6 +448,13 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
                 builder.edge(event_id, assistant_id, "speaker")
             if user_id is not None:
                 builder.edge(event_id, user_id, "recipient")
+        elif speech_act in {"request.identity", "request.user_identity", "request.capability"}:
+            if user_id is not None:
+                builder.edge(event_id, user_id, "asker")
+            if assistant_id is not None:
+                builder.edge(event_id, assistant_id, "target")
+            if speech_act == "request.user_identity" and user_id is not None:
+                builder.edge(event_id, user_id, "identity_subject")
         elif verb_position is not None:
             before_verb, after_verb = words[:verb_position], words[verb_position + 1:]
             if user_id is not None and any(word in FIRST_PERSON for word in before_verb):

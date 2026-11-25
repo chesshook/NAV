@@ -1,7 +1,7 @@
 # MCR-L
 ## Mathematical Cognitive Resonance for Language
 
-MCR-L 0.4 is an experimental CPU-first, meaning-first conversational system. It uses typed semantic representations, response planning, a small grammar engine, optional sourced facts, and a safe arithmetic capability. It uses the Python standard library and does not require a dedicated GPU.
+MCR-L 0.5 is an experimental CPU-first, meaning-first conversational system. It uses typed semantic representations, an explicit pragmatic interpretation layer, compound dialogue-act planning, a small grammar engine, optional sourced facts, and safe arithmetic. It uses the Python standard library and does not require a dedicated GPU.
 
 It is **not** a general-purpose language model and does not claim complete or human-level understanding. This milestone focuses on a foundation: the current message must determine what the system is responding to. A stale topic or an unrelated database hit must never hijack the answer.
 
@@ -9,10 +9,12 @@ It is **not** a general-purpose language model and does not claim complete or hu
 
 MCR-L separates four responsibilities:
 
-1. **Dialogue understanding:** infer the communicative purpose of the current utterance (greeting, presence check, appreciation, request, topic question, topic boundary, and so on).
+1. **Dialogue understanding:** infer the communicative purpose of the current utterance, retain multiple moves in one turn, and distinguish questions about the assistant from questions about the user.
 2. **Response framing:** decide whether to answer, acknowledge, clarify, calculate, ask a follow-up, or admit that relevant knowledge is missing.
 3. **Optional world knowledge:** use only explicitly imported, source-attributed documents or atomic facts. No subject domain is silently preloaded.
 4. **Surface realization:** build a response from the selected response meaning, lexical choices, and a grammar construction.
+
+The interactional layer also distinguishes compliments, capability checks, identity requests, and compound turns such as a greeting followed by a wellbeing question. These are separate pragmatic signals; they are not promoted to factual topics.
 
 The dialogue path remains:
 

@@ -305,5 +305,101 @@ class SemanticCompositionTests(unittest.TestCase):
         self.assertIn("don't know enough", result.text.lower())
 
 
+
+    def test_compound_greeting_and_wellbeing_preserves_both_moves(self) -> None:
+        utterance = "Hi! How is it going?"
+        graph = parse_meaning(utterance)
+        self.assertEqual(graph.speech_act, "social.greeting")
+        self.assertEqual(
+            set(graph.speech_acts),
+            {"social.greeting", "social.wellbeing"},
+        )
+        self.assertFalse(graph.by_kind("topic"))
+        result = self.engine.answer(utterance)
+        self.assertFalse(result.abstained)
+        self.assertEqual(
+            result.diagnostics["response_plan"]["act"],
+            "greet_and_answer_wellbeing",
+        )
+        self.assertIn("ready to help", result.text.lower())
+        self.assertIn("thanks for asking", result.text.lower())
+        self.assertEqual(
+            result.diagnostics["discourse"]["last_speech_act"],
+            "social.greeting+social.wellbeing",
+        )
+        self.assertEqual(result.diagnostics["discourse"]["last_topic"], "")
+
+    def test_assistant_compliment_is_social_not_a_factual_topic(self) -> None:
+        utterance = "Great Mannn u are a super hero"
+        graph = parse_meaning(utterance)
+        self.assertEqual(graph.speech_act, "social.compliment")
+        self.assertFalse(graph.by_kind("topic"))
+        self.assertEqual(graph.edge_targets("addressee")[0].value, "assistant")
+        result = self.engine.answer(utterance)
+        self.assertFalse(result.abstained)
+        self.assertEqual(
+            result.diagnostics["response_plan"]["act"],
+            "acknowledge_compliment",
+        )
+        self.assertIn("kind of you", result.text.lower())
+        self.assertNotIn("what would you like to explore", result.text.lower())
+        self.assertEqual(result.diagnostics["discourse"]["last_topic"], "")
+
+    def test_user_identity_question_does_not_extract_am_as_a_topic(self) -> None:
+        graph = parse_meaning("do you know who I am?")
+        self.assertEqual(graph.speech_act, "request.user_identity")
+        self.assertFalse(graph.by_kind("topic"))
+        result = self.engine.answer("do you know who I am?")
+        self.assertFalse(result.abstained)
+        self.assertEqual(
+            result.diagnostics["response_plan"]["act"],
+            "answer_user_identity",
+        )
+        self.assertIn("only know what you've shared", result.text.lower())
+        self.assertIn("can't identify you independently", result.text.lower())
+        self.assertNotIn("about Am", result.text)
+
+    def test_assistant_identity_variants_share_one_semantic_route(self) -> None:
+        examples = (
+            "who are u",
+            "what's your name",
+            "tell me your name",
+            "do you know about yourself?",
+        )
+        for utterance in examples:
+            with self.subTest(utterance=utterance):
+                graph = parse_meaning(utterance)
+                self.assertEqual(graph.speech_act, "request.identity")
+                self.assertFalse(graph.by_kind("topic"))
+                result = self.engine.answer(utterance)
+                self.assertFalse(result.abstained)
+                self.assertEqual(
+                    result.diagnostics["response_plan"]["act"],
+                    "identify_self",
+                )
+                self.assertIn("mcr-l", result.text.lower())
+
+    def test_capability_question_is_not_misread_as_clarification(self) -> None:
+        utterance = "do u know how to sum?"
+        graph = parse_meaning(utterance)
+        self.assertEqual(graph.speech_act, "request.capability")
+        self.assertEqual(graph.first("capability"), "arithmetic")
+        self.assertFalse(graph.by_kind("topic"))
+        result = self.engine.answer(utterance)
+        self.assertFalse(result.abstained)
+        self.assertEqual(
+            result.diagnostics["response_plan"]["act"],
+            "answer_capability",
+        )
+        self.assertTrue(result.text.lower().startswith("yes"))
+        self.assertIn("arithmetic", result.text.lower())
+
+    def test_direct_verb_form_addition_is_evaluated(self) -> None:
+        result = self.engine.answer("can u sum 2 and 3?")
+        self.assertFalse(result.abstained)
+        self.assertEqual(result.diagnostics["mode"], "calculation")
+        self.assertEqual(result.diagnostics["result"], 5)
+        self.assertEqual(result.text, "2 + 3 = 5.")
+
 if __name__ == "__main__":
     unittest.main()
