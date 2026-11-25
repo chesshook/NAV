@@ -43,6 +43,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("query", nargs="*", help="message or question to submit")
     parser.add_argument("--db", default=None, help="SQLite knowledge database path")
     parser.add_argument("--interactive", action="store_true", help="start a conversation loop")
+    parser.add_argument("--load-demo-documents", action="store_true", help="explicitly load the small project/computing demo document set")
     parser.add_argument("--import-jsonl", metavar="FILE", help="stream sourced document records into the database")
     parser.add_argument("--import-facts-jsonl", metavar="FILE", help="stream source-attributed subject-predicate-object facts into the database")
     parser.add_argument("--debug", action="store_true", help="print meaning graph, sensitivity, and verification details")
@@ -52,8 +53,9 @@ def main(argv: list[str] | None = None) -> int:
     store = KnowledgeStore(database_path)
     try:
         seed = Path(__file__).resolve().parent / "data" / "seed.jsonl"
-        if seed.exists():
-            store.import_jsonl(str(seed))
+        if args.load_demo_documents and seed.exists():
+            count = store.import_jsonl(str(seed))
+            print(f"Loaded {count} optional demo documents.")
 
         imported_any = False
         if args.import_jsonl:
