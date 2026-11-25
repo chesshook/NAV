@@ -13,7 +13,9 @@ from .knowledge import KnowledgeStore
 def _print_answer(engine: MCRLanguageEngine, utterance: str, debug: bool = False) -> None:
     result = engine.answer(utterance)
     print("\nMCR-L:", result.text)
-    print(f"[meaning-preservation/evidence-score={result.confidence:.3f} | abstained={result.abstained}]")
+    mode = result.diagnostics.get("mode", "")
+    score_label = "meaning-preservation" if mode == "semantic_composition" else "fact-support" if mode == "fact_composition" else "evidence-score"
+    print(f"[{score_label}={result.confidence:.3f} | abstained={result.abstained}]")
     if result.selected_title:
         print(f"[basis={result.selected_title} | source={result.source}]")
     if debug:
@@ -21,7 +23,7 @@ def _print_answer(engine: MCRLanguageEngine, utterance: str, debug: bool = False
 
 
 def interactive(engine: MCRLanguageEngine, debug: bool = False) -> None:
-    print("MCR-L 0.2 · CPU-first semantic-composition prototype")
+    print("MCR-L 0.3 · CPU-first semantic-composition prototype")
     print("Type /exit to quit. Use --debug to inspect meaning graphs and sensitivity.")
     while True:
         try:
