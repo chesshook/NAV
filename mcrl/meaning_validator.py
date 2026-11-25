@@ -49,6 +49,12 @@ def validate_response(
     elif response.act == "answer_wellbeing":
         lower = text.lower()
         checks = {"status_answer": "running" in lower, "honest_nonhuman_status": "feelings" in lower}
+    elif response.act == "ask_clarification":
+        lower = text.lower()
+        checks = {
+            "clarification_question": text.rstrip().endswith("?"),
+            "asks_for_missing_intent": "clarify" in lower or "explain" in lower or "know" in lower,
+        }
     elif response.act == "identify_self":
         lower = text.lower()
         checks = {"system_identity": "mcr-l" in lower, "scope_limit": "not a general-purpose" in lower}
