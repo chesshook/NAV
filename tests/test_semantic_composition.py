@@ -359,6 +359,9 @@ class SemanticCompositionTests(unittest.TestCase):
         self.assertIn("only know what you've shared", result.text.lower())
         self.assertIn("can't identify you independently", result.text.lower())
         self.assertNotIn("about Am", result.text)
+        score_components = result.diagnostics["response_plan"]["score_components"]
+        self.assertGreater(score_components["semantic_preservation"], 0.0)
+        self.assertGreater(score_components["pragmatic_task_fit"], 0.0)
 
     def test_assistant_identity_variants_share_one_semantic_route(self) -> None:
         examples = (
@@ -413,6 +416,9 @@ class SemanticCompositionTests(unittest.TestCase):
         self.assertGreaterEqual(candidate.score, 0.95)
         self.assertAlmostEqual(sum(candidate.sensitivity.values()), 1.0, places=6)
         self.assertIn("identity_pattern", candidate.sensitivity)
+        graph = parse_meaning("do you know who I am?")
+        act_node = graph.by_kind("speech_act")[0]
+        self.assertAlmostEqual(act_node.confidence, candidate.score, places=6)
         diagnostics = signals.diagnostics()
         self.assertEqual(diagnostics["method"], "weighted_semantic_constraint_support")
         self.assertIn("not a calibrated probability", diagnostics["score_semantics"])
