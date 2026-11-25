@@ -45,7 +45,7 @@ class MCRLanguageEngine:
             " ".join(record.get("keywords", [])),
             " ".join(record.get("tags", [])),
         ]
-        return set(re.findall(r"[a-z0-9]+(?:[-\u0027][a-z0-9]+)*", " ".join(fields).lower()))
+        return set(re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)*", " ".join(fields).lower()))
 
     def _factual_candidate(self, graph):
         query_terms = set(graph.lexical_tokens)
@@ -56,7 +56,7 @@ class MCRLanguageEngine:
         ranked = []
         for record in records:
             record_terms = self._record_terms(record)
-            title_terms = set(re.findall(r"[a-z0-9]+(?:[-\u0027][a-z0-9]+)*", record.get("title", "").lower()))
+            title_terms = set(re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)*", record.get("title", "").lower()))
             coverage = len(query_terms & record_terms) / max(1, len(query_terms))
             title_coverage = len(query_terms & title_terms) / max(1, len(query_terms))
             if len(query_terms) == 1 and title_coverage < 1.0:
@@ -73,7 +73,7 @@ class MCRLanguageEngine:
             "candidates": len(ranked),
             "term_coverage": round(coverage, 4),
             "title_coverage": round(
-                len(query_terms & set(re.findall(r"[a-z0-9]+(?:[-\u0027][a-z0-9]+)*", record.get("title", "").lower())))
+                len(query_terms & set(re.findall(r"[a-z0-9]+(?:-[a-z0-9]+)*", record.get("title", "").lower())))
                 / max(1, len(query_terms)),
                 4,
             ),
