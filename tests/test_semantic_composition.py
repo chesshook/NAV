@@ -61,6 +61,12 @@ class SemanticCompositionTests(unittest.TestCase):
         self.assertEqual(graph.polarity, "negative")
         self.assertNotEqual(graph.speech_act, "social.pleasantry")
 
+    def test_basic_clause_assigns_agent_and_patient_roles(self) -> None:
+        graph = parse_meaning("I like you")
+        self.assertEqual(graph.predicate, "like")
+        self.assertEqual(graph.edge_targets("agent")[0].value, "user")
+        self.assertEqual(graph.edge_targets("patient")[0].value, "assistant")
+
     def test_temporal_and_comparative_relations_are_separate_nodes(self) -> None:
         before = parse_meaning("Build this before launch")
         comparison = parse_meaning("This engine is faster than the other engine")
