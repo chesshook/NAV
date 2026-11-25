@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import tempfile
+from pathlib import Path
 import unittest
 
 from mcrl.discourse_state import DiscourseState
@@ -91,6 +94,31 @@ class SemanticCompositionTests(unittest.TestCase):
                 for item in second.diagnostics["topic_answer"]["selected_facts"]
             )
         )
+
+    def test_fact_jsonl_import_preserves_provenance(self) -> None:
+        record = {
+            "id": "venus-sample-fact",
+            "subject": "Venus",
+            "aliases": ["morning star"],
+            "predicate": "example_fact",
+            "object": "Venus is a planet.",
+            "confidence": 0.98,
+            "epistemic_status": "established",
+            "priority": 10,
+            "source": "Unit test source",
+            "source_url": "https://example.org/venus",
+            "tags": ["astronomy"],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "facts.jsonl"
+            source.write_text(json.dumps(record) + "\\n", encoding="utf-8")
+            imported = self.store.import_facts_jsonl(str(source), batch_size=1)
+        self.assertEqual(imported, 1)
+        found = self.store.search_facts(["venus"])
+        self.assertTrue(any(item["fact_id"] == "venus-sample-fact" for item in found))
+        venus = next(item for item in found if item["fact_id"] == "venus-sample-fact")
+        self.assertEqual(venus["source_url"], "https://example.org/venus")
+        self.assertEqual(venus["epistemic_status"], "established")
 
     def test_unknown_topic_is_admitted_without_fabricating_a_fact(self) -> None:
         result = self.engine.answer("Anything about Neptune?")
