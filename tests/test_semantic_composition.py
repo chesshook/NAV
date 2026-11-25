@@ -118,6 +118,12 @@ class SemanticCompositionTests(unittest.TestCase):
             )
         )
 
+    def test_indirect_distance_question_is_recognized_without_question_mark(self) -> None:
+        graph = parse_meaning("can u tell me how much distance is from moon to earth")
+        self.assertEqual(graph.intent, "question")
+        self.assertEqual(graph.first("topic"), "moon earth")
+        self.assertTrue(self.engine.answer("can u tell me how much distance is from moon to earth").abstained)
+
     def test_distance_question_does_not_fall_back_to_unrelated_moon_facts(self) -> None:
         self.load_optional_moon_sample()
         result = self.engine.answer("Can u tell me how much distance is from moon to earth?")
