@@ -43,7 +43,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("query", nargs="*", help="message or question to submit")
     parser.add_argument("--db", default=None, help="SQLite knowledge database path")
     parser.add_argument("--interactive", action="store_true", help="start a conversation loop")
-    parser.add_argument("--import-jsonl", metavar="FILE", help="stream sourced JSONL records into the database")
+    parser.add_argument("--import-jsonl", metavar="FILE", help="stream sourced document records into the database")
+    parser.add_argument("--import-facts-jsonl", metavar="FILE", help="stream source-attributed subject-predicate-object facts into the database")
     parser.add_argument("--debug", action="store_true", help="print meaning graph, sensitivity, and verification details")
     args = parser.parse_args(argv)
 
@@ -54,11 +55,17 @@ def main(argv: list[str] | None = None) -> int:
         if seed.exists():
             store.import_jsonl(str(seed))
 
+        imported_any = False
         if args.import_jsonl:
             count = store.import_jsonl(args.import_jsonl)
-            print(f"Imported/updated {count} records. Database now contains {store.count()} records.")
-            if not args.query and not args.interactive:
-                return 0
+            print(f"Imported/updated {count} document records. Database now contains {store.count()} documents.")
+            imported_any = True
+        if args.import_facts_jsonl:
+            count = store.import_facts_jsonl(args.import_facts_jsonl)
+            print(f"Imported/updated {count} semantic facts. Fact store now contains {store.fact_count()} facts.")
+            imported_any = True
+        if imported_any and not args.query and not args.interactive:
+            return 0
 
         engine = MCRLanguageEngine(store)
         if args.interactive:
