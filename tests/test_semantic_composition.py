@@ -26,23 +26,26 @@ class SemanticCompositionTests(unittest.TestCase):
         self.assertEqual(result.diagnostics["mode"], "semantic_composition")
         self.assertEqual(result.diagnostics["verification"]["preservation"], 1.0)
 
-    def test_bare_what_is_a_clarification_request_not_a_fact_lookup(self) -> None:
-        graph = parse_meaning("what?")
-        self.assertEqual(graph.speech_act, "request.clarification")
-        self.assertEqual(graph.lexical_tokens, ())
-        self.assertFalse(graph.by_kind("polarity"))
-        result = self.engine.answer("what?")
-        self.assertEqual(result.text, "What would you like me to clarify?")
+    def test_hello_there_preserves_the_salutation_extension(self) -> None:
+        result = self.engine.answer("Hello there")
+        self.assertEqual(result.text, "Hello there!")
         self.assertFalse(result.abstained)
         self.assertEqual(result.diagnostics["mode"], "semantic_composition")
         self.assertTrue(result.diagnostics["verification"]["valid"])
 
-    def test_greeting_graph_connects_speaker_and_addressee_to_event(self) -> None:
-        graph = parse_meaning("hi")
-        self.assertEqual(graph.speech_act, "social.greeting")
-        self.assertEqual(graph.first("event"), "greeting")
-        self.assertEqual(graph.edge_targets("speaker")[0].value, "user")
-        self.assertEqual(graph.edge_targets("addressee")[0].value, "assistant")
+    def test_are_u_there_is_a_presence_check_not_a_clarification(self) -> None:
+        graph = parse_meaning("are u there?")
+        self.assertEqual(graph.speech_act, "request.presence_check")
+        self.assertEqual(graph.predicate, "presence_check")
+        self.assertEqual(graph.edge_targets("asker")[0].value, "user")
+        self.assertEqual(graph.edge_targets("target")[0].value, "assistant")
+        result = self.engine.answer("are u there?")
+        self.assertEqual(result.text, "Yes, I am here!")
+        self.assertFalse(result.abstained)
+        self.assertEqual(
+            result.diagnostics["verification"]["reparsed_speech_act"],
+            "response.presence_confirmation",
+        )
 
     def test_paraphrases_share_the_same_core_event_and_speech_act(self) -> None:
         examples = (
@@ -54,6 +57,59 @@ class SemanticCompositionTests(unittest.TestCase):
         self.assertTrue(all(graph.speech_act == "social.pleasantry" for graph in graphs))
         self.assertTrue(all(graph.predicate == "meeting" for graph in graphs))
         self.assertTrue(all(graph.edge_targets("addressee") for graph in graphs))
+
+    def test_moon_topic_answer_uses_sourced_partial_facts(self) -> None:
+        result = self.engine.answer("Tell me about the Moon")
+        self.assertFalse(result.abstained)
+        self.assertEqual(result.diagnostics["mode"], "fact_composition")
+        self.assertIn("bright, almost white", result.text)
+        self.assertIn("dark-gray", result.text)
+        self.assertIn("reflecting sunlight", result.text)
+        self.assertIn("only have a few sourced basics", result.text)
+        self.assertTrue(
+            any(
+                source["url"].startswith("https://science.nasa.gov/")
+                for source in result.diagnostics["topic_answer"]["sources"]
+            )
+        )
+
+    def test_what_do_you_know_about_moon_maps_to_the_same_topic(self) -> None:
+        result = self.engine.answer("What do you know about the moon?")
+        self.assertFalse(result.abstained)
+        self.assertEqual(result.diagnostics["mode"], "fact_composition")
+        self.assertIn("bright, almost white", result.text)
+
+    def test_moon_followup_resolves_it_and_selects_size_fact(self) -> None:
+        first = self.engine.answer("Tell me about the Moon")
+        second = self.engine.answer("Is it big?")
+        self.assertFalse(first.abstained)
+        self.assertFalse(second.abstained)
+        self.assertIn("one-quarter as wide as Earth", second.text)
+        self.assertTrue(
+            any(
+                item["predicate"] == "diameter_relative_to_earth"
+                for item in second.diagnostics["topic_answer"]["selected_facts"]
+            )
+        )
+
+    def test_unknown_topic_is_admitted_without_fabricating_a_fact(self) -> None:
+        result = self.engine.answer("Anything about Neptune?")
+        self.assertTrue(result.abstained)
+        self.assertEqual(result.diagnostics["mode"], "unknown_topic")
+        self.assertIn("don't have reliable facts about Neptune", result.text)
+        self.assertNotIn("Neptune is", result.text)
+
+    def test_color_question_selects_only_color_facts(self) -> None:
+        result = self.engine.answer("What color is the Moon?")
+        self.assertFalse(result.abstained)
+        predicates = {
+            item["predicate"]
+            for item in result.diagnostics["topic_answer"]["selected_facts"]
+        }
+        self.assertEqual(
+            predicates,
+            {"apparent_color_from_earth", "surface_color_up_close"},
+        )
 
     def test_sensitivity_is_counterfactual_and_normalized(self) -> None:
         graph = parse_meaning("Nice to meet u MCR")
@@ -78,6 +134,24 @@ class SemanticCompositionTests(unittest.TestCase):
         graph = parse_meaning("It is not nice to meet you")
         self.assertEqual(graph.polarity, "negative")
         self.assertNotEqual(graph.speech_act, "social.pleasantry")
+
+    def test_bare_what_is_a_clarification_request_not_a_fact_lookup(self) -> None:
+        graph = parse_meaning("what?")
+        self.assertEqual(graph.speech_act, "request.clarification")
+        self.assertEqual(graph.lexical_tokens, ())
+        self.assertFalse(graph.by_kind("polarity"))
+        result = self.engine.answer("what?")
+        self.assertEqual(result.text, "What would you like me to clarify?")
+        self.assertFalse(result.abstained)
+        self.assertEqual(result.diagnostics["mode"], "semantic_composition")
+        self.assertTrue(result.diagnostics["verification"]["valid"])
+
+    def test_greeting_graph_connects_speaker_and_addressee_to_event(self) -> None:
+        graph = parse_meaning("hi")
+        self.assertEqual(graph.speech_act, "social.greeting")
+        self.assertEqual(graph.first("event"), "greeting")
+        self.assertEqual(graph.edge_targets("speaker")[0].value, "user")
+        self.assertEqual(graph.edge_targets("addressee")[0].value, "assistant")
 
     def test_basic_clause_assigns_agent_and_patient_roles(self) -> None:
         graph = parse_meaning("I like you")
@@ -113,13 +187,16 @@ class SemanticCompositionTests(unittest.TestCase):
         ])
         result = self.engine.answer("What is recurrent quantum machinery?")
         self.assertTrue(result.abstained)
-        self.assertEqual(result.diagnostics["mode"], "evidence_gate")
-        self.assertLess(result.diagnostics["evidence"]["term_coverage"], 0.70)
+        self.assertEqual(result.diagnostics["mode"], "unknown_topic")
+        self.assertLess(
+            result.diagnostics["evidence"]["term_coverage"],
+            0.70,
+        )
 
     def test_unknown_factual_question_abstains(self) -> None:
         result = self.engine.answer("What is an unknown semantic mechanism?")
         self.assertTrue(result.abstained)
-        self.assertIn("does not contain enough", result.text)
+        self.assertIn("don't have reliable facts", result.text)
 
 
 if __name__ == "__main__":
