@@ -11,6 +11,7 @@ from mcrl.engine import MCRLanguageEngine
 from mcrl.knowledge import KnowledgeStore
 from mcrl.meaning_solver import solve_response
 from mcrl.meaning_validator import validate_response
+from mcrl.pragmatics import analyze_pragmatics
 from mcrl.semantic_parser import parse_meaning
 from mcrl.sensitivity import calculate_sensitivity
 
@@ -400,6 +401,55 @@ class SemanticCompositionTests(unittest.TestCase):
         self.assertEqual(result.diagnostics["mode"], "calculation")
         self.assertEqual(result.diagnostics["result"], 5)
         self.assertEqual(result.text, "2 + 3 = 5.")
+
+
+    def test_pragmatic_hypotheses_have_weighted_evidence_and_sensitivity(self) -> None:
+        signals = analyze_pragmatics(("do", "you", "know", "who", "i", "am"))
+        self.assertEqual(signals.identity_target, "user")
+        candidate = next(
+            item for item in signals.candidates
+            if item.label == "identity_question" and item.target == "user"
+        )
+        self.assertGreaterEqual(candidate.score, 0.95)
+        self.assertAlmostEqual(sum(candidate.sensitivity.values()), 1.0, places=6)
+        self.assertIn("identity_pattern", candidate.sensitivity)
+        diagnostics = signals.diagnostics()
+        self.assertEqual(diagnostics["method"], "weighted_semantic_constraint_support")
+        self.assertIn("not a calibrated probability", diagnostics["score_semantics"])
+
+    def test_negated_positive_attribution_is_not_scored_as_a_compliment(self) -> None:
+        signals = analyze_pragmatics(("you", "are", "not", "helpful"))
+        self.assertFalse(signals.compliment)
+        self.assertFalse(
+            any(item.label == "social_compliment" for item in signals.candidates)
+        )
+
+    def test_situation_model_tracks_compound_moves_and_participant_roles(self) -> None:
+        result = self.engine.answer("Hi! How is it going?")
+        situation = result.diagnostics["situation"]
+        self.assertEqual(situation["active_goal"], "social_interaction")
+        self.assertEqual(
+            situation["last_user_moves"],
+            ["social.greeting", "social.wellbeing"],
+        )
+        self.assertEqual(situation["last_speaker"], "user")
+        self.assertEqual(situation["last_addressee"], "assistant")
+        self.assertFalse(situation["pending_question"])
+        self.assertEqual(situation["current_topic"], "")
+
+    def test_situation_model_preserves_referent_across_social_acknowledgement(self) -> None:
+        self.engine.answer("Anything about Neptune?")
+        result = self.engine.answer("That's great")
+        self.assertEqual(result.diagnostics["situation"]["current_topic"], "Neptune")
+        self.assertEqual(result.diagnostics["situation"]["active_goal"], "social_interaction")
+
+    def test_unknown_capability_is_admitted_without_false_claim(self) -> None:
+        result = self.engine.answer("Do you know how to swim?")
+        self.assertFalse(result.abstained)
+        self.assertEqual(result.diagnostics["response_plan"]["act"], "answer_capability")
+        self.assertIn("don't have a reliable swim capability", result.text.lower())
+        self.assertIn("counterfactual_sensitivity", result.diagnostics["pragmatic_interpretation"]["candidates"][0])
+
 
 if __name__ == "__main__":
     unittest.main()
