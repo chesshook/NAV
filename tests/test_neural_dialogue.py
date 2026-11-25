@@ -9,6 +9,7 @@ from mcrl.neural_dialogue import (
     NeuralDialogueCore,
     _compact_history,
     _validate_interpretation,
+    _validate_plan,
     LocalModelError,
 )
 
@@ -63,6 +64,30 @@ class NeuralDialogueTests(unittest.TestCase):
         self.assertEqual(parsed["speech_act"], "confirmation_request")
         with self.assertRaises(LocalModelError):
             _validate_interpretation(frame(speech_act="random_keyword_guess"))
+
+    def test_rejects_malformed_nested_clause_instead_of_trusting_outer_json(self):
+        bad_clause = {
+            "predicate": "teach",
+            "agent": "user",
+            "patient": "me",
+            "polarity": "maybe",
+            "modality": "request",
+            "time": "present",
+        }
+        with self.assertRaises(LocalModelError):
+            _validate_interpretation(frame(clauses=[bad_clause]))
+
+    def test_validates_deliberation_decision_and_audit_lists(self):
+        plan = {
+            "decision": "reply_from_context",
+            "steps": ["Resolve the antecedent."],
+            "evidence_to_use": ["Previous assistant turn."],
+            "uncertainties": [],
+            "response_requirements": ["Confirm only supported information."],
+        }
+        self.assertEqual(_validate_plan(plan), plan)
+        with self.assertRaises(LocalModelError):
+            _validate_plan({**plan, "decision": "make_something_up"})
 
     def test_context_is_supplied_to_understanding_and_realization(self):
         client = FakeClient([
