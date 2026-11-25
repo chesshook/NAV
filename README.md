@@ -1,7 +1,7 @@
 # MCR-L
 ## Mathematical Cognitive Resonance for Language
 
-MCR-L 0.6 is an experimental CPU-first, meaning-first conversational system. It uses typed semantic representations, an explicit pragmatic interpretation layer, compound dialogue-act planning, a small grammar engine, optional sourced facts, and safe arithmetic. It uses the Python standard library and does not require a dedicated GPU.
+MCR-L 0.7 is an experimental CPU-first, meaning-first conversational system. It uses typed semantic representations, an explicit pragmatic interpretation layer, compound dialogue-act planning, a small grammar engine, optional sourced facts, and safe arithmetic. It uses the Python standard library and does not require a dedicated GPU.
 
 It is **not** a general-purpose language model and does not claim complete or human-level understanding. This milestone focuses on a foundation: the current message must determine what the system is responding to. A stale topic or an unrelated database hit must never hijack the answer.
 
@@ -22,7 +22,29 @@ MCR-L does not frame a reply by repeatedly selecting a likely next token. It fir
 
 For a candidate interpretation h, its support is the weighted sum of observed cues divided by total cue weight, minus an explicit contradiction penalty. Counterfactual sensitivity is the decrease in support when one cue is removed. The resulting cue impacts are normalized to show which evidence carries the interpretation. These values are engineering support measures, **not calibrated probabilities**.
 
-The bounded dialogue situation model tracks recent user moves, conversational goal, participant roles, active topic, interaction tone, and the assistant action selected. It does not infer a real-world identity or silently create personal facts.
+The bounded dialogue situation model tracks recent user moves, conversational goal, participant roles, active topic, interaction tone, and the assistant action selected. It stores the actual utterances and responses for a limited session recap; it does not infer a real-world identity or silently create personal facts.
+
+## Compositional interaction planning
+
+Before a message can reach factual retrieval, MCR-L checks whether it expresses an operation on the conversation itself. This layer produces an explicit plan with operation, payload, constraints, supporting cues, and precedence.
+
+Examples:
+
+    you> can u smile for me?
+    MCR-L: 😊
+
+    you> wowow
+    MCR-L: Wowow! What's going on?
+
+    you> dont tell me who are you, just say Helo
+    MCR-L: Helo
+
+    you> what we talked till now?
+    MCR-L: [recap built from the actual user and assistant turns in this session]
+
+An explicit output directive has priority over an embedded question that the user has prohibited. Action verbs such as "smile" are treated as actions requested of the assistant, not automatically converted into factual subjects. Session recaps are built from recorded turns and clearly limit themselves to what was actually said.
+
+This is still a bounded compositional grammar. It is more flexible than one-answer-per-question templates, but it is not unrestricted language understanding. A genuinely GPT-scale conversational capability requires broad learned language representations and training data; the symbolic engine alone cannot manufacture that competence.
 
 The dialogue path remains:
 
@@ -126,7 +148,7 @@ The calculator parses a numeric expression into a Python AST and evaluates only 
 
 Requires Python 3.10+; no third-party packages.
 
-    git switch semantic-composition-v0.6
+    git switch semantic-composition-v0.7
     py -3 -m mcrl --interactive
     py -3 -m mcrl --interactive --debug
     py -3 -m mcrl "Can u tell me the value of sum of 4 and 5?"
@@ -157,6 +179,7 @@ Both JSONL import paths stream in batches into SQLite. The database is disk-back
 - The response-preservation value is a ratio of explicit verification checks. It is not a probability of truth or intelligence.
 - Pragmatic candidate scores are weighted constraint-support values, not calibrated probabilities. Counterfactual sensitivity reports relative cue contribution within a candidate.
 - The situation model is bounded, session-local interaction state, not a persistent human-like memory or user profile.
+- Explicit commands, assistant-directed action requests, standalone exclamations, and conversation-history questions are compiled into interaction plans before fact lookup.
 - The source-confidence-metadata value is the minimum confidence metadata of selected facts. It is not statistically calibrated.
 - The arithmetic evaluator is a bounded capability, not general mathematical reasoning.
 - The parser recognizes a limited set of English constructions. It does not yet provide broad syntax, learned general semantic role labeling, unrestricted coreference, or full negation/tense scope.
@@ -164,4 +187,4 @@ Both JSONL import paths stream in batches into SQLite. The database is disk-back
 - The system does not autonomously research, learn, or verify facts from arbitrary raw text.
 - No fixed rule system can honestly promise 101% understanding of every possible utterance. The acceptance target is measurable generalization to held-out paraphrases, role reversals, question types, discourse contexts, and unknown-topic cases.
 
-The aim remains CPU-first, meaning-first language composition: understand the current utterance, determine what response it calls for, use evidence only when it is relevant, and be explicit about what is not known. This milestone is a measurable symbolic step toward that goal, not a claim of GPT-level breadth or human-like consciousness.
+The aim remains CPU-first, meaning-first language composition: understand the current utterance, determine what response it calls for, use evidence only when it is relevant, and be explicit about what is not known. This milestone is a measurable symbolic step toward that goal, not a claim of GPT-level breadth or human-like consciousness. The remaining route to broad conversational competence is to learn compositional language representations from large, diverse, reviewed corpora and evaluate genuine held-out generalization—not to keep growing phrase lists.
