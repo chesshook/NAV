@@ -42,6 +42,21 @@
 - [ ] Build meaning plans for open-ended statements, questions, requests, corrections, and disagreement.
 - [ ] Evaluate outputs by semantic equivalence and pragmatic appropriateness, not only lexical checks.
 
+## 0.6 — Mathematical interpretation field (current branch)
+- [x] Score multiple pragmatic interpretation hypotheses from weighted semantic evidence.
+- [x] Expose candidate evidence, structural constraints, support scores, and cue sensitivity.
+- [x] Compute cue sensitivity by counterfactual ablation rather than assigning a decorative importance score.
+- [x] Distinguish user identity, assistant identity, capability checks, and assistant-directed compliments.
+- [x] Preserve compound conversational moves in the meaning graph and address each selected move.
+- [x] Track a bounded dialogue situation: goal, participant roles, topic, tone, response action, and recent turns.
+- [x] Keep topic context stable across social turns without confusing participant references for factual topics.
+- [x] Add tests for score support, sensitivity normalization, negation, situation state, and unknown capabilities.
+- [ ] Use the situation model to resolve ambiguous multi-turn references with explicit competing hypotheses.
+- [ ] Replace remaining token-pattern gates with compositional clause parsing and role constraints.
+- [ ] Add a held-out paraphrase corpus and report per-construction precision, recall, and confusion matrices.
+- [ ] Learn cue weights from reviewed train/validation examples and freeze the held-out test set.
+- [ ] Expand response realization beyond finite templates while preserving semantic constraints.
+
 ## 0.6 — Knowledge and reasoning (optional layer)
 - [ ] Curate user-selected and licensed atomic facts with provenance and source dates.
 - [ ] Add subject/predicate/object indexing and source conflict detection.
