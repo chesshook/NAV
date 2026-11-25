@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcrl"
+version = "0.1.0"
+description = "CPU-first structured language reasoning research prototype"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+authors = [{name = "MCR-L contributors"}]
+dependencies = []
+
+[project.scripts]
+mcrl = "mcrl.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["mcrl*"]
+
+[tool.setuptools.package-data]
+mcrl = ["data/*.jsonl"]

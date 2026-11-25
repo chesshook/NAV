@@ -25,6 +25,8 @@ Requires Python 3.10+; no third-party packages.
 ```bash
 python -m mcrl "What is MCR-L?"
 python -m mcrl --interactive
+# Basic greetings, thanks, farewells, and identity questions are handled locally.
+python -m pip install -e .  # optional: install the mcrl command
 python -m unittest discover -s tests -v
 ```
 
@@ -50,7 +52,7 @@ Create UTF-8 JSON Lines records, one per line:
 Import them:
 
 ```bash
-python -m mcrl --db data/knowledge.sqlite import path/to/records.jsonl
+python -m mcrl --db data/knowledge.sqlite --import-jsonl path/to/records.jsonl
 python -m mcrl --db data/knowledge.sqlite "What is RAM?"
 ```
 
