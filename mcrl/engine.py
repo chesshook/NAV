@@ -171,6 +171,7 @@ class MCRLanguageEngine:
                     "recipient": response.recipient,
                     "requirements": response.requirements,
                     "utility": round(response.utility, 5),
+                    "score_components": dict(response.diagnostics or {}),
                 },
                 "grammar_ast": ast.__dict__,
                 "verification": validation.diagnostics(),
