@@ -32,8 +32,8 @@ class MCRLTests(unittest.TestCase):
             engine = MCRLanguageEngine(store)
             result = engine.answer("hi")
             self.assertFalse(result.abstained)
-            self.assertEqual(result.diagnostics["intent"], "greeting")
-            self.assertEqual(result.diagnostics["mode"], "semantic_composition")
+            self.assertEqual(result.diagnostics["intent"], "social.greeting")
+            self.assertEqual(result.diagnostics["mode"], "dialogue_composition")
             self.assertEqual(result.text, "Hi!")
             self.assertEqual(engine.last_plan, None)
         finally:
@@ -81,7 +81,7 @@ class MCRLTests(unittest.TestCase):
                 "What is the orbital phase of quasar ZY-999?"
             )
             self.assertTrue(result.abstained)
-            self.assertIn("reliable facts", result.text.lower())
+            self.assertIn("know enough", result.text.lower())
         finally:
             store.close()
 
