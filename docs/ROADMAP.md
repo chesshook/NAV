@@ -13,83 +13,70 @@
 - [x] Limited topic responses and simple follow-up topic resolution.
 - [x] Honest response path for unsupported topics.
 
-## 0.4 — Topic-neutral dialogue and capability routing (current branch)
-- [x] Remove automatic loading of the Moon fact file and demo document file.
-- [x] Require explicit opt-in for demo documents and explicit import for user facts.
-- [x] Keep generic dialogue words out of the topic memory.
-- [x] Use only explicit current topics or valid question anaphors to resolve discourse references.
-- [x] Constrain fact selection to the explicit subject/alias and requested property.
-- [x] Never replace a missing distance/color/size fact with an unrelated fact about the same subject.
-- [x] Recognize appreciation such as “that's great” and respond conversationally.
-- [x] Recognize “don't tell me about X” as a topic-boundary request.
+## 0.4 — Topic-neutral dialogue and capability routing
+- [x] Remove automatic loading of demo knowledge.
+- [x] Require explicit opt-in for demo documents and user facts.
+- [x] Keep generic dialogue words out of topic memory.
+- [x] Constrain fact selection to explicit subjects and requested properties.
 - [x] Add safe arithmetic independent of the knowledge store.
-- [x] Add regression cases for topic isolation, calculations, acknowledgements, boundaries, and property-specific abstention.
-- [ ] Broaden conversational constructions using held-out paraphrase data, not only authored patterns.
-- [ ] Improve natural topic phrase extraction for relation questions with multiple entities.
-- [ ] Add general event frames, tense/aspect, modality, and robust negation scope.
 
 ## 0.5 — Pragmatic interaction and general composition
-- [x] Add a separate pragmatic interpretation layer before topic extraction and response selection.
-- [x] Preserve multiple speech acts in a compound conversational turn.
+- [x] Add a separate pragmatic interpretation layer before topic extraction.
+- [x] Preserve multiple speech acts in compound conversational turns.
 - [x] Distinguish assistant identity, user identity, capability checks, and compliments.
-- [x] Prevent social turns and identity/capability questions from creating false factual topics.
-- [x] Add direct verb-form addition extraction to the safe arithmetic route.
-- [x] Add regression tests for the observed v0.4 failures.
-- [ ] Learn grammar and lexical relations from reviewed examples with train/validation/test splits.
+- [ ] Learn grammar and lexical relations from reviewed examples with clean data splits.
 - [ ] Compose clauses with subject, object, experiencer, cause, location, time, and instrument roles.
 - [ ] Represent conjunction, disjunction, conditionals, quantifiers, and comparisons.
-- [ ] Resolve references across multiple turns with explicit ambiguity handling.
-- [ ] Build meaning plans for open-ended statements, questions, requests, corrections, and disagreement.
-- [ ] Evaluate outputs by semantic equivalence and pragmatic appropriateness, not only lexical checks.
 
-## 0.6 — Mathematical interpretation field (current branch)
-- [x] Score multiple pragmatic interpretation hypotheses from weighted semantic evidence.
-- [x] Expose candidate evidence, structural constraints, support scores, and cue sensitivity.
-- [x] Compute cue sensitivity by counterfactual ablation rather than assigning a decorative importance score.
-- [x] Distinguish user identity, assistant identity, capability checks, and assistant-directed compliments.
-- [x] Preserve compound conversational moves in the meaning graph and address each selected move.
-- [x] Track a bounded dialogue situation: goal, participant roles, topic, tone, response action, and recent turns.
-- [x] Keep topic context stable across social turns without confusing participant references for factual topics.
-- [x] Add tests for score support, sensitivity normalization, negation, situation state, and unknown capabilities.
-- [ ] Use the situation model to resolve ambiguous multi-turn references with explicit competing hypotheses.
-- [ ] Replace remaining token-pattern gates with compositional clause parsing and role constraints.
-- [ ] Add a held-out paraphrase corpus and report per-construction precision, recall, and confusion matrices.
-- [ ] Learn cue weights from reviewed train/validation examples and freeze the held-out test set.
-- [ ] Expand response realization beyond finite templates while preserving semantic constraints.
+## 0.6 — Mathematical interpretation field
+- [x] Score pragmatic interpretation hypotheses from weighted semantic evidence.
+- [x] Expose candidate support, structural constraints, and cue sensitivity.
+- [x] Track a bounded dialogue situation and recent user/assistant messages.
+- [ ] Calibrate scores against measured correctness.
+- [ ] Evaluate ambiguous multi-turn reference resolution on held-out conversations.
 
-## 0.7 — Compositional interaction planning (current branch)
-- [x] Compile explicit speech-output directives into a payload-bearing action plan.
-- [x] Give explicit output commands priority over embedded questions the user has prohibited.
-- [x] Interpret assistant-directed action verbs as interaction requests, not factual subjects.
-- [x] Distinguish symbolic expression from physical capability and avoid claiming a body.
-- [x] Route standalone interjections to social continuation rather than factual lookup.
-- [x] Store actual user and assistant utterances in the bounded session ledger.
-- [x] Answer conversation-history requests from recorded turns, without inventing missing history.
-- [x] Add transcript-driven regression tests for the observed failures and compositional paraphrases.
-- [ ] Generalize clause decomposition across coordination, contrast, conditionals, and embedded clauses.
-- [ ] Learn semantic frames and interaction policies from a broad reviewed conversation corpus.
-- [ ] Add held-out evaluation of action intent, speech-act scope, negation, priority, and history questions.
-- [ ] Replace finite response templates with richer meaning-to-language realization constrained by a response plan.
-- [ ] Add a learned language competence layer only after dataset, licensing, training, CPU/RAM, and evaluation design are established.
+## 0.7 — Compositional interaction planning
+- [x] Compile explicit speech-output directives into payload-bearing plans.
+- [x] Give explicit output commands priority over prohibited embedded questions.
+- [x] Treat assistant-directed action verbs as interaction requests.
+- [x] Distinguish symbolic expression from physical capability.
+- [x] Route standalone reactions and history questions to interaction handling.
+- [x] Store bounded session transcripts.
+- [ ] Broaden clause decomposition across coordination, contrast, conditionals, and embedded clauses.
+- [ ] Evaluate action intent, speech-act scope, negation, and reference resolution on held-out data.
 
-## 0.6 — Knowledge and reasoning (optional layer)
-- [ ] Curate user-selected and licensed atomic facts with provenance and source dates.
-- [ ] Add subject/predicate/object indexing and source conflict detection.
-- [ ] Require full subject and property match before claim selection.
-- [ ] Extract candidate facts from text with source spans; require review before promotion.
+## 0.8 — Learned language foundation
+- [x] Add a local OpenAI-compatible inference adapter using the Python standard library.
+- [x] Define a typed semantic-frame schema with dialogue acts, clauses, references, knowledge need, ambiguity, and response goal.
+- [x] Interpret each new utterance with a bounded recent conversation transcript.
+- [x] Separate semantic interpretation from natural-language realization.
+- [x] Add an optional independent deliberation-plan pass before realization.
+- [x] Fail closed when the configured model is unavailable; do not silently use the old keyword parser.
+- [x] Keep deterministic safe arithmetic as a separate capability.
+- [ ] Run the new multi-turn evaluation set against actual local model weights.
+- [ ] Measure semantic-frame accuracy, reference resolution, hallucination rate, latency, and peak RAM on target PCs.
+- [ ] Curate a licensed, human-reviewed semantic conversation corpus with conversation-level train/validation/test splits.
+- [ ] Compare prompt-only baseline, parameter-efficient fine-tuning, and smaller distilled student models.
+- [ ] Calibrate uncertainty from held-out results.
+
+## 0.9 — Evidence-aware world knowledge (planned)
+- [ ] Retrieve relevant facts only after the semantic frame identifies a knowledge need.
+- [ ] Store source provenance and dates; distinguish model memory from verified current evidence.
+- [ ] Detect contradictions and answer only what the evidence supports.
 - [ ] Add multi-hop reasoning only after single-hop evidence selection is reliable.
-- [ ] Calibrate confidence against measured correctness and freshness.
 
 ## Acceptance gates
 
 A milestone is promoted only after:
-1. Held-out paraphrases map to equivalent semantic structures.
-2. Unrelated new topics do not inherit prior discourse topics.
+1. Semantic interpretations generalize to unseen paraphrases and informal writing.
+2. Context-dependent replies resolve the correct previous proposition.
 3. Role reversals, negation, tense, and property contrasts are distinguished.
-4. Arithmetic and other safe capabilities do not consult unrelated domain memory.
-5. Unknown-topic and unknown-property questions abstain with the correct subject.
-6. Source-attributed facts cannot cross-contaminate subjects or requested predicates.
+4. Requests without a necessary subject trigger a useful clarification.
+5. Model knowledge is not presented as externally verified fact.
+6. Unknown or ambiguous cases are handled with calibrated uncertainty.
 7. Tests run across Python 3.10–3.13.
-8. CPU, RAM, latency, and broader language coverage are measured separately.
+8. CPU, RAM, latency, and language coverage are measured independently.
 
-The intended architecture remains meaning-first and CPU-first. MCR-L 0.5 is still a bounded prototype: the pragmatic layer repairs concrete conversational distinctions but does not yet provide broad learned language understanding, a persistent user model, general common-sense reasoning, or open-ended natural-language generation. Those remain explicit research milestones.
+MCR-L remains a research prototype. The symbolic engine is inspectable but limited; a
+pretrained model adds learned linguistic competence but does not guarantee correctness.
+The objective is measurable generalization, not a claim of perfect understanding.
