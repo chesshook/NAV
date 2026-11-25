@@ -8,6 +8,7 @@
 - [x] Streaming JSONL importer.
 - [x] Evidence-aware answer-plan scoring and abstention.
 - [x] Controlled answer realization from retrieved records.
+- [x] Deterministic handling for basic greetings, thanks, farewells, and identity questions.
 - [x] Unit tests and CPU benchmark harness.
 - [ ] Persist per-conversation state and feedback weights.
 - [ ] CI validation on Windows, Linux, and macOS.

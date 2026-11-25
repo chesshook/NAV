@@ -25,6 +25,7 @@ Requires Python 3.10+; no third-party packages.
 ```bash
 python -m mcrl "What is MCR-L?"
 python -m mcrl --interactive
+# Basic greetings, thanks, farewells, and identity questions are handled locally.
 python -m pip install -e .  # optional: install the mcrl command
 python -m unittest discover -s tests -v
 ```

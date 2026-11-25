@@ -36,8 +36,38 @@ FOLLOW_UP_CUES = ("it", "that", "those", "these", "also", "then", "what about", 
 FEATURE_NAMES = (
     "question", "define", "explain", "compare", "how_to", "entity", "action",
     "causality", "temporal", "negation", "constraint", "uncertainty",
-    "evidence", "risk", "context", "follow_up",
+    "evidence", "risk", "context", "follow_up", "social",
 )
+
+SOCIAL_PATTERNS = (
+    ("greeting", re.compile(r"^(hi|hello|hey|howdy|yo|good morning|good afternoon|good evening)[!.?\\s]*$")),
+    ("wellbeing", re.compile(r"^(how are you|how's it going|how are things)[!.?\\s]*$")),
+    ("thanks", re.compile(r"^(thanks|thank you|thx|many thanks|i appreciate it)[!.?\\s]*$")),
+    ("farewell", re.compile(r"^(bye|goodbye|see you|good night|see you later)[!.?\\s]*$")),
+    ("identity", re.compile(r"^(who are you|what are you|what's your name|what is your name|are you an ai|are you a bot)[!.?\\s]*$")),
+)
+
+SOCIAL_RESPONSES = {
+    "greeting": "Hi! I'm MCR-L 0.1. I can answer from my local knowledge index, explain what I know, and tell you when I don't have enough evidence. What would you like to explore?",
+    "wellbeing": "I'm running and ready to help. I'm software, so I don't have feelings, but thanks for asking. What shall we work on?",
+    "thanks": "You're welcome! What would you like to explore next?",
+    "farewell": "Goodbye! Your local MCR-L session can be started again whenever you're ready.",
+    "identity": "I'm MCR-L 0.1, an experimental CPU-first, rule-and-retrieval language reasoning prototype. I am not yet a general-purpose neural language model.",
+}
+
+
+def classify_social(text: str) -> str | None:
+    """Recognize complete, common social turns before factual retrieval."""
+    normalized = re.sub(r"\\s+", " ", (text or "").lower()).strip()
+    for intent, pattern in SOCIAL_PATTERNS:
+        if pattern.fullmatch(normalized):
+            return intent
+    return None
+
+
+def social_response(intent: str) -> str:
+    """Return a deterministic response for a recognized social intent."""
+    return SOCIAL_RESPONSES[intent]
 
 
 @dataclass(frozen=True)
@@ -61,6 +91,9 @@ def _contains_any(text: str, cues: Iterable[str]) -> bool:
 
 
 def _intent(text: str) -> str:
+    social = classify_social(text)
+    if social:
+        return social
     padded = f" {text.lower()} "
     for intent, cues in INTENT_CUES.items():
         if any(cue in padded for cue in cues):
@@ -96,6 +129,7 @@ def parse_semantics(text: str) -> SemanticFrame:
     values["action"] = float(any(w in content for w in ("build", "make", "create", "install", "run", "delete", "fix", "use", "open")))
     # Evidence is set after retrieval; it must not be inferred from the question itself.
     values["evidence"] = 0.0
+    values["social"] = float(intent in {"greeting", "wellbeing", "thanks", "farewell", "identity"})
 
     features = tuple(max(0.0, min(1.0, values[name])) for name in FEATURE_NAMES)
     return SemanticFrame(

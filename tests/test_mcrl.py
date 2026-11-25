@@ -8,7 +8,7 @@ import unittest
 from mcrl.cognition import MCRState
 from mcrl.engine import MCRLanguageEngine
 from mcrl.knowledge import KnowledgeStore
-from mcrl.semantic import FEATURE_NAMES, parse_semantics
+from mcrl.semantic import FEATURE_NAMES, classify_social, parse_semantics
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,6 +25,31 @@ class MCRLTests(unittest.TestCase):
         self.assertEqual(frame.intent, "define")
         self.assertIn("mcr-l", frame.content_tokens)
         self.assertEqual(len(frame.features), len(FEATURE_NAMES))
+
+    def test_basic_greeting_is_handled_without_retrieval(self):
+        store = self.make_store()
+        try:
+            engine = MCRLanguageEngine(store)
+            result = engine.answer("hi")
+            self.assertFalse(result.abstained)
+            self.assertEqual(result.diagnostics["intent"], "greeting")
+            self.assertEqual(result.diagnostics["mode"], "social_rule")
+            self.assertIn("MCR-L 0.1", result.text)
+            self.assertEqual(engine.last_plan, None)
+        finally:
+            store.close()
+
+    def test_common_social_turns_are_classified(self):
+        expected = {
+            "Hello!": "greeting",
+            "how are you?": "wellbeing",
+            "thank you": "thanks",
+            "goodbye": "farewell",
+            "who are you?": "identity",
+        }
+        for text, intent in expected.items():
+            with self.subTest(text=text):
+                self.assertEqual(classify_social(text), intent)
 
     def test_recurrent_state_is_bounded_and_changes(self):
         frame = parse_semantics("Why does a computer slow down?")

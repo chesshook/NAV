@@ -6,7 +6,7 @@ from .cognition import MCRState
 from .knowledge import KnowledgeStore
 from .planner import CandidatePlan, build_plans, score_plan
 from .realizer import realize
-from .semantic import parse_semantics, with_evidence
+from .semantic import parse_semantics, social_response, with_evidence
 
 
 @dataclass
@@ -28,6 +28,22 @@ class MCRLanguageEngine:
 
     def answer(self, question: str) -> Answer:
         frame = parse_semantics(question)
+        if frame.intent in {"greeting", "wellbeing", "thanks", "farewell", "identity"}:
+            self.state.step(frame.features)
+            self.last_plan = None
+            return Answer(
+                text=social_response(frame.intent),
+                confidence=1.0,
+                abstained=False,
+                selected_title="Built-in conversational rule: " + frame.intent,
+                source="MCR-L built-in social response",
+                diagnostics={
+                    "intent": frame.intent,
+                    "mode": "social_rule",
+                    "activation": self.state.snapshot(),
+                },
+            )
+
         records = self.store.search(" ".join(frame.content_tokens), limit=40)
 
         # Estimate evidence from lexical retrieval, then update the recurrent
