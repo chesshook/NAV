@@ -7,7 +7,7 @@ from typing import Iterable
 
 PROPERTY_PREDICATES = {
     "distance": {"distance", "mean_distance", "distance_to", "distance_to_earth"},
-    "color": {"color", "colour", "apparent_color", "apparent_color_from_earth", "surface_color"},
+    "color": {"color", "colour", "apparent_color", "apparent_color_from_earth", "surface_color", "surface_color_up_close"},
     "size": {"size", "diameter", "diameter_relative_to_earth", "radius", "mass"},
     "population": {"population"},
     "capital": {"capital"},
@@ -100,12 +100,18 @@ def compose_topic_answer(
     selected = _select_facts(fact_list, requested_property)
 
     if not selected:
-        property_text = f" about {requested_property}" if requested_property else ""
-        text = (
-            f"Hmm, I don't know enough about {display}{property_text} to give you "
-            "a reliable answer yet. I don't want to bluff or make something up. "
-            "Ask me about a specific angle and I'll tell you what I can support."
-        )
+        if requested_property:
+            text = (
+                f"Hmm, I don't have a reliable {requested_property} fact for {display} yet. "
+                "I don't want to bluff or swap in an unrelated fact. If you have a source, "
+                "we can add it; otherwise I should leave that detail uncertain."
+            )
+        else:
+            text = (
+                f"Hmm, I don't know enough about {display} to give you a reliable answer yet. "
+                "I don't want to bluff or make something up. Ask me about a specific angle "
+                "and I'll tell you what I can support."
+            )
         return TopicAnswer(
             text=text,
             topic=display,
