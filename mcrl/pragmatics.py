@@ -29,6 +29,10 @@ CAPABILITY_FILLER = {
     "please", "me", "you", "your", "u", "the", "a", "an", "this",
     "that", "it", "something", "anything", "for", "with", "to",
 }
+NON_CAPABILITY_REQUESTS = {
+    "tell", "explain", "show", "give", "say", "help", "make", "build",
+    "create", "fix", "compare", "describe", "find", "search",
+}
 
 
 def _contains(words: tuple[str, ...], phrase: tuple[str, ...]) -> bool:
@@ -79,20 +83,27 @@ def _capability_target(words: tuple[str, ...]) -> str:
             break
 
     candidate_words: tuple[str, ...] = ()
+    direct_modal = False
     if marker is not None:
         candidate_words = words[marker:]
     elif len(words) >= 3 and words[0] in {"can", "could"} and words[1] == "you":
         candidate_words = words[2:]
+        direct_modal = True
     else:
         return ""
 
     for word in candidate_words:
-        if word in CAPABILITY_ALIASES:
-            return CAPABILITY_ALIASES[word]
         if word in CAPABILITY_FILLER:
             continue
-        # Keep a bounded, normalized name for unsupported skills too. The
-        # response layer can then say clearly that the capability is absent.
+        if direct_modal and word in NON_CAPABILITY_REQUESTS:
+            return ""
+        if word in CAPABILITY_ALIASES:
+            return CAPABILITY_ALIASES[word]
+        # Modal forms need an unambiguous action. "Can you tell me about X?"
+        # is a request; it must not be rewritten as a capability check.
+        if direct_modal:
+            return ""
+        # "Do you know how to X?" can ask about an unsupported skill too.
         if word.isalpha() and len(word) > 2:
             return word
     return ""
