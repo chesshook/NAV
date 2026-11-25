@@ -479,7 +479,7 @@ class SemanticCompositionTests(unittest.TestCase):
         self.assertIn("can't physically sing", result.text.lower())
         self.assertEqual(
             result.diagnostics["interaction_plan"]["operation"],
-            "perform_symbolic_action",
+            "admit_action_limit",
         )
 
     def test_standalone_wowow_is_a_reaction_not_a_subject_lookup(self) -> None:
