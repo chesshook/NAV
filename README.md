@@ -48,6 +48,10 @@ The response is assembled from:
 
 This is a narrow, explicit grammar—not proof that the engine understands arbitrary English. The parser also extracts negation, temporal, and comparative nodes, but extraction alone does not mean the system can yet reason correctly about every such relation.
 
+The initial rules cover basic greetings, gratitude, farewells, wellbeing questions, identity questions, and positive meeting pleasantries.
+
+Bare, incomplete wh-questions such as `what?` are treated as clarification requests rather than factual queries with no evidence. They should prompt the user for the missing topic, while complete factual questions continue through the evidence gate.
+
 ## Quick start
 
 Requires Python 3.10+; no third-party packages.
