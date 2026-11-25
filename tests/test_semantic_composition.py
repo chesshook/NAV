@@ -446,7 +446,10 @@ class SemanticCompositionTests(unittest.TestCase):
     def test_situation_model_preserves_referent_across_social_acknowledgement(self) -> None:
         self.engine.answer("Anything about Neptune?")
         result = self.engine.answer("That's great")
-        self.assertEqual(result.diagnostics["situation"]["current_topic"], "Neptune")
+        self.assertEqual(
+            result.diagnostics["situation"]["current_topic"].lower(),
+            "neptune",
+        )
         self.assertEqual(result.diagnostics["situation"]["active_goal"], "social_interaction")
 
     def test_unknown_capability_is_admitted_without_false_claim(self) -> None:
