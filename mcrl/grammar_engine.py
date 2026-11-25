@@ -30,6 +30,8 @@ class SentenceAST:
             return (self.fixed_lexemes[0] if self.fixed_lexemes else "Goodbye") + "!"
         if self.construction == "wellbeing_answer":
             return "I'm running and ready to help. I don't have feelings, but thanks for asking."
+        if self.construction == "clarification_prompt":
+            return "What would you like me to clarify?"
         if self.construction == "identity_answer":
             return (
                 "I'm MCR-L, a CPU-first semantic-composition prototype. "
@@ -72,6 +74,8 @@ class GrammarEngine:
             )
         if response.act == "answer_wellbeing":
             return SentenceAST(construction="wellbeing_answer")
+        if response.act == "ask_clarification":
+            return SentenceAST(construction="clarification_prompt")
         if response.act == "identify_self":
             return SentenceAST(construction="identity_answer")
         return SentenceAST(construction="unsupported")
