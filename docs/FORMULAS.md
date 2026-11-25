@@ -1,8 +1,6 @@
-# MCR-L 0.3: active mathematical specification
+# MCR-L 0.4: active architecture and safeguards
 
-This document describes implemented mechanisms in the semantic-composition branch. It distinguishes hand-authored engineering assumptions from learned or empirically established facts.
-
-## 1. Typed meaning graph
+## 1. Current-utterance semantic graph
 
 An utterance is mapped to:
 
@@ -10,102 +8,89 @@ An utterance is mapped to:
 G=(V,E,A)
 \]
 
-- \(V\): typed nodes for speech acts, events, participants, polarity, affect, time, comparison, and topics.
-- \(E\): semantic-role edges such as speaker, addressee, asker, target, agent, patient, has-event, and negates.
-- \(A\): node attributes, including the source surface form and parser confidence.
+- V: nodes for speech acts, events, participants, polarity, affect, temporal/comparative operators, and explicit topic targets.
+- E: semantic-role edges such as speaker, addressee, asker, target, agent, patient, has-event, and negates.
+- A: source surface forms and parser confidence metadata.
 
-For example, “Are u there?” should create a request.presence_check act, a presence_check event, a user asker, and an assistant target. The system does not derive this from the word “there” alone: it needs a second-person participant and a question-like construction.
+Common chat contractions are normalized before parsing. Topic extraction happens after dialogue construction analysis, so grammatical words and social markers are not mistaken for topic nouns.
 
-## 2. Counterfactual sensitivity
+## 2. Topic isolation
 
-The implementation computes structural utility \(U(G)\) from node kinds and relation edges. For every node \(v_i\), it removes that node and its incident edges:
+The engine may read a prior topic only when the current utterance contains an anaphor in a question-like construction and no new explicit topic has been extracted:
+
+\[
+T_t =
+\begin{cases}
+T_{\mathrm{explicit}}, & \text{if current topic is explicit}\\
+T_{t-1}, & \text{if current construction contains a resolvable anaphor}\\
+\varnothing, & \text{otherwise}
+\end{cases}
+\]
+
+Ordinary content tokens do not update discourse topic state. Only explicit topic.target or correctly resolved topic.resolved nodes can do so. New unrelated questions therefore cannot inherit an old subject.
+
+## 3. Counterfactual sensitivity
+
+For every semantic node \(v_i\), the current implementation computes structural utility loss after removing the node and incident edges:
 
 \[
 S_i=\max(0,U(G)-U(G\setminus v_i))
 \]
 
-Then:
+and normalizes:
 
 \[
-w_i=\frac{S_i}{\sum_j S_j+\epsilon}
+w_i=\frac{S_i}{\sum_jS_j+\epsilon}
 \]
 
-If every loss is zero, the implementation assigns a uniform distribution over the nodes. These weights express the importance of represented graph components under hand-authored utility weights; they are not learned truths about human meaning.
+These are explicit engineering weights, not learned measurements of human attention. The response planner evaluates pragmatic response candidates before lexical realization.
 
-## 3. Response-meaning selection
+## 4. Dialogue response planning
 
-The planner evaluates response meanings before the grammar engine chooses words:
+The current dialogue solver has explicit operators for:
+- greetings and greeting reciprocation;
+- meeting pleasantries;
+- gratitude and farewell;
+- wellbeing and identity questions;
+- presence checks;
+- incomplete-question clarification;
+- positive acknowledgement and empathetic acknowledgement;
+- respecting a request to avoid a topic.
 
-\[
-J(R)=\sum_k W_k P_k(R)+T(R)+B(R)-M(R)
-\]
+Each operator defines required semantic effects; a grammar AST realizes the selected response meaning. Unknown statements receive a neutral conversational continuation rather than an unrelated fact.
 
-where:
-- \(W_k\): aggregated sensitivity for semantic kind \(k\);
-- \(P_k(R)\): whether response plan \(R\) preserves that kind;
-- \(T(R)\): pragmatic/task fit;
-- \(B(R)\): a small candidate utility term;
-- \(M(R)\): missing-requirement penalty.
+## 5. Safe arithmetic capability
 
-The current supported candidates include reciprocal greeting, reciprocal meeting pleasantry, gratitude acknowledgement, farewell, wellbeing, identity, clarification, and presence confirmation. This is a deliberately finite response-operator set.
+Natural-language arithmetic is first reduced to a small expression grammar. The expression is parsed into an AST. Only numeric constants, bounded unary operations, and whitelisted arithmetic operators are accepted. There is no call to eval, exec, attributes, function calls, imports, or arbitrary Python code. Magnitude, exponent, and division-by-zero checks are enforced.
 
-## 4. Concept-local lexical selection
+Arithmetic returns before fact retrieval or topic-state updates. This prevents a calculation such as “sum of 4 and 5” from being confused with the last subject discussed.
 
-The lexical compiler ranks candidates attached to a selected concept, rather than ranking the entire vocabulary:
+## 6. Optional knowledge retrieval
 
-\[
-L^*=\arg\max_{\ell\in Lex(c)}
-(0.42P+0.22G+0.20R-0.16A+0.30Q)
-\]
+The knowledge store has separate document and atomic-fact tables. Neither is automatically seeded by the engine.
 
-\(P\) is semantic precision, \(G\) grammar fit, \(R\) register fit, \(A\) ambiguity penalty, and \(Q\) lexical reuse preference. Candidate values are hand-authored in the current prototype.
+For a fact request:
+1. The parser must provide an explicit current topic or a legitimate resolved anaphor.
+2. Candidate facts are searched.
+3. The candidate's subject or alias must contain the full normalized topic term set.
+4. When the question requests a property, the predicate must belong to that property class.
+5. If no exact topic/property fact exists, the system must abstain from factual assertion.
 
-## 5. Grammar and meaning verification
+For document fallback, every topic term must match the candidate's title/tags as well as its indexed content. Property-specific questions do not use a generic paragraph as fallback.
 
-The grammar engine constructs a small syntax AST and linearizes it. The resulting text is parsed again. For each supported response operator, required checks are evaluated:
+The subject check is important: FTS is a candidate generator, not an authority that can assign a topic to the question. The current utterance supplies the topic; fact records cannot override it.
 
-\[
-V(Y,R)=\frac{\text{passed required checks}}{\text{number of required checks}}
-\]
+## 7. Honest unknown response
 
-The CLI's meaning-preservation score is this ratio. It is not a global semantic similarity measure; it is only as strong as the parser and the required checks for that response operator.
+For a topic with no relevant source:
+- retain the topic named by the current request;
+- optionally name the missing property;
+- admit that the local system lacks reliable information;
+- do not add a plausible-sounding filler claim;
+- do not copy a fact from a previously discussed subject.
 
-## 6. Atomic sourced facts
+This is a capability boundary, not a factual answer. Its status is shown as knowledge-match=none, not a false confidence score.
 
-A semantic fact is stored as:
+## 8. What is not achieved
 
-\[
-f=(s,p,o,c,e,r,u,t)
-\]
-
-where:
-- \(s\): subject;
-- \(p\): predicate;
-- \(o\): object/value;
-- \(c\): manually supplied confidence metadata in \([0,1]\);
-- \(e\): epistemic status (established, qualified, tentative);
-- \(r\): source/attribution;
-- \(u\): source URL;
-- \(t\): aliases and tags.
-
-SQLite stores the records on disk. FTS5, when available, generates candidates from subject, aliases, predicate, object, and tags. Candidate priority is explicit metadata, not a learned relevance model.
-
-## 7. Epistemic topic response
-
-The topic responder selects fact predicates according to the user's query properties. For example, a Moon color question favors apparent_color_from_earth and surface_color_up_close; a size follow-up favors diameter_relative_to_earth.
-
-The wording uses a cautious lead-in because the local store is small. Each factual clause corresponds to a selected fact. If no fact and no adequate sourced document record are available, the system explicitly says it lacks reliable local knowledge and does not invent a filler claim.
-
-The CLI's fact-support score is:
-
-\[
-C_{\text{answer}}=\min_{f\in F_{\text{selected}}} c_f
-\]
-
-It is a simple metadata floor, not calibrated factual probability. The presence of a URL does not alone guarantee source correctness; fact curation remains a human responsibility.
-
-## 8. What remains unsolved
-
-The formulas do not produce concepts, grammar, grounding, or truth criteria by themselves. Broader work is still needed on syntax, morphology, scope, anaphora, logical operators, relation learning, contradiction detection, source freshness, confidence calibration, and held-out evaluation.
-
-A GPU-free runtime is a hardware property—not an accuracy or intelligence benchmark.
+The system still does not have a broad, learned language parser, an open-domain world model, general factual reasoning, robust compositional logic, or universal paraphrase understanding. The rules are bounded and must be tested against held-out language. A CPU-only design is a deployment property, not proof of intelligence.
