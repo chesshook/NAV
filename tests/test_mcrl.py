@@ -42,6 +42,7 @@ class MCRLTests(unittest.TestCase):
     def test_common_social_turns_are_classified(self):
         expected = {
             "Hello!": "greeting",
+            "  good   morning  ": "greeting",
             "how are you?": "wellbeing",
             "thank you": "thanks",
             "goodbye": "farewell",
