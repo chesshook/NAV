@@ -27,11 +27,12 @@ def _source_modifier(graph: SemanticGraph) -> str:
     return modifiers[0].surface.lower() if modifiers else ""
 
 
-def _candidate_score(
+def _candidate_components(
     graph: SemanticGraph,
     sensitivity: SensitivityResult,
     candidate: ResponseMeaning,
-) -> float:
+) -> dict[str, float]:
+    """Expose the distinct terms used to score a response-level meaning."""
     weights = sensitivity.kind_weights
     preservation = {
         "event": 1.0 if candidate.predicate else 0.0,
@@ -39,20 +40,42 @@ def _candidate_score(
         "participant": 1.0 if candidate.recipient else 0.0,
         "speech_act": 1.0 if candidate.act else 0.0,
     }
-    preserved = sum(weights.get(kind, 0.0) * value for kind, value in preservation.items())
+    semantic_preservation = sum(
+        weights.get(kind, 0.0) * value
+        for kind, value in preservation.items()
+    )
     task_fit = 0.20 if candidate.act in {
         "reciprocate_meeting", "reciprocate_greeting", "acknowledge_gratitude",
         "reciprocate_farewell", "answer_wellbeing", "identify_self", "confirm_presence",
-        "acknowledge_positive_statement", "acknowledge_negative_statement", "acknowledge_topic_avoidance",
-        "greet_and_answer_wellbeing", "acknowledge_compliment", "answer_user_identity",
-        "answer_capability",
+        "acknowledge_positive_statement", "acknowledge_negative_statement",
+        "acknowledge_topic_avoidance", "greet_and_answer_wellbeing",
+        "acknowledge_compliment", "answer_user_identity", "answer_capability",
     } else 0.0
-    missing_requirements = sum(
+    missing_requirement_penalty = sum(
         0.035 for requirement in candidate.requirements
         if requirement == "recipient" and not candidate.recipient
     )
-    # This utility is a response-plan objective, not next-token probability.
-    return preserved + task_fit + candidate.utility - missing_requirements
+    declared_plan_utility = candidate.utility
+    total = (
+        semantic_preservation + task_fit + declared_plan_utility
+        - missing_requirement_penalty
+    )
+    return {
+        "semantic_preservation": semantic_preservation,
+        "pragmatic_task_fit": task_fit,
+        "declared_plan_utility": declared_plan_utility,
+        "missing_requirement_penalty": missing_requirement_penalty,
+        "total": total,
+    }
+
+
+def _candidate_score(
+    graph: SemanticGraph,
+    sensitivity: SensitivityResult,
+    candidate: ResponseMeaning,
+) -> float:
+    """Compatibility wrapper for the scalar response utility."""
+    return _candidate_components(graph, sensitivity, candidate)["total"]
 
 
 def solve_response(
@@ -220,12 +243,13 @@ def solve_response(
     else:
         return None
 
-    ranked = sorted(
-        ((_candidate_score(graph, sensitivity, candidate), candidate) for candidate in candidates),
-        key=lambda pair: pair[0],
-        reverse=True,
-    )
-    score, selected = ranked[0]
+    ranked = [
+        (_candidate_components(graph, sensitivity, candidate), candidate)
+        for candidate in candidates
+    ]
+    ranked.sort(key=lambda pair: pair[0]["total"], reverse=True)
+    score_components, selected = ranked[0]
+    score = score_components["total"]
     return ResponseMeaning(
         act=selected.act,
         predicate=selected.predicate,
@@ -239,6 +263,10 @@ def solve_response(
         diagnostics={
             "selected_plan_utility": score,
             "candidates_considered": float(len(candidates)),
+            "semantic_preservation": score_components["semantic_preservation"],
+            "pragmatic_task_fit": score_components["pragmatic_task_fit"],
+            "declared_plan_utility": score_components["declared_plan_utility"],
+            "missing_requirement_penalty": score_components["missing_requirement_penalty"],
             "input_speech_act_weight": sensitivity.kind_weights.get("speech_act", 0.0),
             "input_event_weight": sensitivity.kind_weights.get("event", 0.0),
             "input_participant_weight": sensitivity.kind_weights.get("participant", 0.0),
