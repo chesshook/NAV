@@ -28,7 +28,7 @@ class MCRLanguageEngine:
 
     def answer(self, question: str) -> Answer:
         frame = parse_semantics(question)
-        records = self.store.search(question, limit=40)
+        records = self.store.search(" ".join(frame.content_tokens), limit=40)
 
         # Estimate evidence from lexical retrieval, then update the recurrent
         # state. Evidence is not fabricated from the query itself.
@@ -57,7 +57,7 @@ class MCRLanguageEngine:
         if best is None or best.score < self.minimum_score or not best.matched_terms or not best.record.get("source"):
             self.last_plan = None
             return Answer(
-                text="I found no sufficiently supported answer in the local knowledge index. I will not guess; add a relevant sourced record or provide more context.",
+                text="I found no sufficiently supported evidence in the local knowledge index. I will not guess; add a relevant sourced record or provide more context.",
                 confidence=best.score if best else 0.0,
                 abstained=True,
                 diagnostics={

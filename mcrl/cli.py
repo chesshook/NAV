@@ -60,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
     database_path = args.db or ":memory:"
     store = KnowledgeStore(database_path)
     try:
-        seed = _project_root() / "data" / "seed.jsonl"
+        seed = Path(__file__).resolve().parent / "data" / "seed.jsonl"
         if seed.exists():
             store.import_jsonl(str(seed))
 

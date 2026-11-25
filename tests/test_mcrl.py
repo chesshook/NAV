@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class MCRLTests(unittest.TestCase):
     def make_store(self, path=":memory:"):
         store = KnowledgeStore(path)
-        store.import_jsonl(str(ROOT / "data" / "seed.jsonl"))
+        store.import_jsonl(str(ROOT / "mcrl" / "data" / "seed.jsonl"))
         return store
 
     def test_semantic_parser_extracts_definition_intent(self):

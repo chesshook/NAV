@@ -33,7 +33,7 @@ def percentile(values: list[float], p: float) -> float:
 
 def main() -> int:
     store = KnowledgeStore(":memory:")
-    store.import_jsonl(str(ROOT / "data" / "seed.jsonl"))
+    store.import_jsonl(str(ROOT / "mcrl" / "data" / "seed.jsonl"))
     engine = MCRLanguageEngine(store)
     samples: list[float] = []
     tracemalloc.start()
