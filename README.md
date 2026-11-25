@@ -1,7 +1,7 @@
 # MCR-L
 ## Mathematical Cognitive Resonance for Language
 
-MCR-L 0.5 is an experimental CPU-first, meaning-first conversational system. It uses typed semantic representations, an explicit pragmatic interpretation layer, compound dialogue-act planning, a small grammar engine, optional sourced facts, and safe arithmetic. It uses the Python standard library and does not require a dedicated GPU.
+MCR-L 0.6 is an experimental CPU-first, meaning-first conversational system. It uses typed semantic representations, an explicit pragmatic interpretation layer, compound dialogue-act planning, a small grammar engine, optional sourced facts, and safe arithmetic. It uses the Python standard library and does not require a dedicated GPU.
 
 It is **not** a general-purpose language model and does not claim complete or human-level understanding. This milestone focuses on a foundation: the current message must determine what the system is responding to. A stale topic or an unrelated database hit must never hijack the answer.
 
@@ -15,6 +15,14 @@ MCR-L separates four responsibilities:
 4. **Surface realization:** build a response from the selected response meaning, lexical choices, and a grammar construction.
 
 The interactional layer also distinguishes compliments, capability checks, identity requests, and compound turns such as a greeting followed by a wellbeing question. These are separate pragmatic signals; they are not promoted to factual topics.
+
+## Mathematical interpretation field
+
+MCR-L does not frame a reply by repeatedly selecting a likely next token. It first builds an explicit interpretation and response meaning, then realizes that meaning through grammar. The v0.6 pragmatic layer evaluates competing semantic hypotheses using weighted role and construction evidence.
+
+For a candidate interpretation h, its support is the weighted sum of observed cues divided by total cue weight, minus an explicit contradiction penalty. Counterfactual sensitivity is the decrease in support when one cue is removed. The resulting cue impacts are normalized to show which evidence carries the interpretation. These values are engineering support measures, **not calibrated probabilities**.
+
+The bounded dialogue situation model tracks recent user moves, conversational goal, participant roles, active topic, interaction tone, and the assistant action selected. It does not infer a real-world identity or silently create personal facts.
 
 The dialogue path remains:
 
@@ -43,6 +51,16 @@ The current bounded conversational grammar includes:
 
     you> dont tell me anything about moon
     MCR-L: Got it — I won’t bring up Moon unless you ask.
+
+    you> Hi! How is it going?
+    MCR-L: Hi! I'm here and ready to help—thanks for asking. How are things going with you?
+
+    you> do you know who I am?
+    MCR-L: I only know what you've shared with me in this conversation.
+    I can't identify you independently or see private details.
+
+    you> tell me your name
+    MCR-L: I'm MCR-L, a CPU-first semantic-composition prototype.
 
 A supported arithmetic expression is evaluated independently:
 
@@ -108,7 +126,7 @@ The calculator parses a numeric expression into a Python AST and evaluates only 
 
 Requires Python 3.10+; no third-party packages.
 
-    git switch semantic-composition-v0.4
+    git switch semantic-composition-v0.6
     py -3 -m mcrl --interactive
     py -3 -m mcrl --interactive --debug
     py -3 -m mcrl "Can u tell me the value of sum of 4 and 5?"
@@ -136,12 +154,14 @@ Both JSONL import paths stream in batches into SQLite. The database is disk-back
 
 ## Measurement and limitations
 
-- The meaning-check value is a ratio of hand-authored verification checks. It is not a probability of truth or intelligence.
+- The response-preservation value is a ratio of explicit verification checks. It is not a probability of truth or intelligence.
+- Pragmatic candidate scores are weighted constraint-support values, not calibrated probabilities. Counterfactual sensitivity reports relative cue contribution within a candidate.
+- The situation model is bounded, session-local interaction state, not a persistent human-like memory or user profile.
 - The source-confidence-metadata value is the minimum confidence metadata of selected facts. It is not statistically calibrated.
 - The arithmetic evaluator is a bounded capability, not general mathematical reasoning.
-- The parser recognizes a limited set of English constructions. It does not yet provide broad syntax, general semantic role labeling, unrestricted coreference, or full negation/tense scope.
+- The parser recognizes a limited set of English constructions. It does not yet provide broad syntax, learned general semantic role labeling, unrestricted coreference, or full negation/tense scope.
 - The response planner has a finite set of supported dialogue acts. Unsupported constructions should trigger an honest clarification or limitation, not an invented interpretation.
 - The system does not autonomously research, learn, or verify facts from arbitrary raw text.
 - No fixed rule system can honestly promise 101% understanding of every possible utterance. The acceptance target is measurable generalization to held-out paraphrases, role reversals, question types, discourse contexts, and unknown-topic cases.
 
-The aim remains CPU-first, meaning-first language composition: understand the current utterance, determine what response it calls for, use evidence only when it is relevant, and be explicit about what is not known.
+The aim remains CPU-first, meaning-first language composition: understand the current utterance, determine what response it calls for, use evidence only when it is relevant, and be explicit about what is not known. This milestone is a measurable symbolic step toward that goal, not a claim of GPT-level breadth or human-like consciousness.

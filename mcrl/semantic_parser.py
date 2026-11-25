@@ -279,6 +279,8 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
         speech_act, intent = "request.presence_check", "presence_check"
     elif avoid_topic:
         speech_act, intent = "request.avoid_topic", "avoid_topic"
+    elif pragmatic.ambiguous_identity:
+        speech_act, intent = "request.clarification", "clarification"
     elif user_identity:
         speech_act, intent = "request.user_identity", "identity"
     elif identity:
@@ -331,17 +333,47 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
         node_ids[key] = node_id
         return node_id
 
-    act_id = add(speech_act, "speech_act", speech_act)
+    pragmatic_target = (
+        "user" if speech_act == "request.user_identity"
+        else "assistant" if speech_act == "request.identity"
+        else ""
+    )
+    if pragmatic_target:
+        semantic_support = pragmatic.support_for("identity_question", pragmatic_target)
+    elif speech_act == "request.capability":
+        semantic_support = pragmatic.support_for("capability_question", capability_target)
+    elif speech_act == "social.compliment":
+        semantic_support = pragmatic.support_for("social_compliment", "assistant")
+    else:
+        semantic_support = 1.0
+    # The hypothesis support is carried into the graph so that downstream
+    # counterfactual sensitivity uses the same evidence strength.
+    act_id = add(
+        speech_act, "speech_act", speech_act,
+        confidence=semantic_support or 1.0,
+    )
     if presence_check:
         event_id = add("event.presence_check", "event", "presence_check")
     elif speech_act == "request.capability":
-        event_id = add("event.capability_check", "event", "capability_check", capability_target)
+        event_id = add(
+            "event.capability_check", "event", "capability_check",
+            capability_target, confidence=semantic_support or 1.0,
+        )
     elif speech_act == "request.user_identity":
-        event_id = add("event.user_identity_question", "event", "user_identity_question")
+        event_id = add(
+            "event.user_identity_question", "event", "user_identity_question",
+            confidence=semantic_support or 1.0,
+        )
     elif speech_act == "request.identity":
-        event_id = add("event.assistant_identity_question", "event", "assistant_identity_question")
+        event_id = add(
+            "event.assistant_identity_question", "event", "assistant_identity_question",
+            confidence=semantic_support or 1.0,
+        )
     elif speech_act == "social.compliment":
-        event_id = add("event.compliment", "event", "compliment")
+        event_id = add(
+            "event.compliment", "event", "compliment",
+            confidence=semantic_support or 1.0,
+        )
     elif presence_confirmation:
         event_id = add("event.presence_confirmation", "event", "presence_confirmation")
     elif meeting:
@@ -358,7 +390,7 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
     else:
         event_id = None
     if event_id is not None:
-        builder.edge(act_id, event_id, "has_event")
+        builder.edge(act_id, event_id, "has_event", semantic_support or 1.0)
 
     # Keep independent moves in a compound turn instead of discarding all but
     # the first label. "Hi! How is it going?" has both acts in one graph.
@@ -370,7 +402,10 @@ def parse_meaning(text: str, discourse: Any | None = None) -> SemanticGraph:
         builder.edge(wellbeing_act_id, wellbeing_event_id, "has_event")
 
     if capability_target:
-        add("capability.target", "capability", capability_target, capability_target)
+        add(
+            "capability.target", "capability", capability_target,
+            capability_target, confidence=semantic_support or 1.0,
+        )
 
     if modifiers:
         affect_id = add("affect.positive", "affect", "positive", modifiers[0])

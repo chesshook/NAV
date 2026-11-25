@@ -1,4 +1,4 @@
-# MCR-L 0.5: active architecture and safeguards
+# MCR-L 0.6: active architecture and safeguards
 
 ## 1. Current-utterance semantic graph
 
@@ -131,3 +131,73 @@ This is a capability boundary, not a factual answer. Its status is shown as know
 ## 8. What is not achieved
 
 The system still does not have a broad, learned language parser, an open-domain world model, general factual reasoning, robust compositional logic, or universal paraphrase understanding. The rules are bounded and must be tested against held-out language. A CPU-only design is a deployment property, not proof of intelligence.
+
+
+## 9. Weighted interpretation hypotheses
+
+The pragmatic interpreter evaluates a small set of candidate semantic hypotheses independently. Each candidate is grounded in typed cues such as a participant reference, an interrogative construction, an ability frame, a polarity marker, or a positive attribution.
+
+For hypothesis h:
+
+[
+C(h)=operatorname{clip}_{[0,1]}
+left(
+rac{sum_i alpha_i x_i}{sum_i alpha_i}
+-lambda K(h)
+ight)
+]
+
+- (x_iin[0,1]) is the observed activation of cue i.
+- (alpha_igeq 0) is the declared importance of that cue for the candidate.
+- (K(h)) is an explicit contradiction penalty.
+- (lambda) controls the penalty strength.
+
+Candidate generation also applies hard structural gates. For example, a compliment hypothesis requires a positive attribution aimed at the addressee and is rejected when the clause is negated. An identity question has separate targets for the user and the assistant.
+
+The score is **constraint support**, not a calibrated probability, certainty, or general intelligence measure.
+
+## 10. Counterfactual cue sensitivity
+
+Each cue is tested by removing its activation while holding the other evidence fixed:
+
+[
+Delta_i(h)=max(0,C(h)-C(hmid x_ileftarrow 0))
+]
+
+The normalized sensitivity distribution is:
+
+[
+s_i(h)=rac{Delta_i(h)}{sum_jDelta_j(h)+epsilon}
+]
+
+This answers a concrete question: which observed semantic cue made this interpretation stronger? It does not claim the cue is universally important or that the interpretation is correct in every context. A weak margin between competing identity hypotheses is treated as ambiguity rather than silently forcing one target.
+
+## 11. Dialogue situation state
+
+A bounded session state records:
+- the ordered user moves within the latest turn;
+- the current conversational goal;
+- speaker and addressee roles;
+- the active explicit topic;
+- interaction tone;
+- the assistant action and outcome;
+- a short, bounded history of recent turns.
+
+Non-topic moves do not erase the current topic. A social or identity question cannot overwrite an unrelated active referent, and a participant question cannot create a factual topic such as the token "am". The situation record contains only what the parser explicitly represented; it does not infer personal identity.
+
+## 12. Response path and generation boundary
+
+The v0.6 path is:
+
+[
+	ext{utterance}
+ightarrow 	ext{typed cues}
+ightarrow 	ext{candidate interpretations}
+ightarrow 	ext{constraint support and sensitivity}
+ightarrow 	ext{meaning graph}
+ightarrow 	ext{response plan}
+ightarrow 	ext{grammar realization}
+ightarrow 	ext{verification}
+]
+
+The response path is meaning-first rather than autoregressive next-token selection. The current lexicon and parser are still bounded, and the surface grammar still has finite constructions. This is a deliberate research boundary: the milestone removes token-by-token response framing for its supported constructions; it does not solve open-domain language understanding or unrestricted sentence generation.
