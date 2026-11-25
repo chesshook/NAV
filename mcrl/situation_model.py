@@ -72,13 +72,8 @@ class DialogueSituation:
         ]
         if topics:
             self.current_topic = topics[0]
-        elif any(move.startswith("social.") for move in moves) or any(
-            move in {"request.identity", "request.user_identity", "request.capability"}
-            for move in moves
-        ):
-            # Social and participant questions are not world-knowledge topics.
-            self.current_topic = ""
-
+        # Absence of a topic does not erase the previous discourse referent.
+        # Identity/capability/social moves simply do not overwrite it.
         speaker_nodes = graph.edge_targets("speaker") if hasattr(graph, "edge_targets") else ()
         addressee_nodes = graph.edge_targets("addressee") if hasattr(graph, "edge_targets") else ()
         if speaker_nodes:
