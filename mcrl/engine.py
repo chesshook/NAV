@@ -20,6 +20,7 @@ from .sensitivity import calculate_sensitivity
 from .topic_responder import compose_topic_answer
 from .pragmatics import analyze_pragmatics
 from .situation_model import DialogueSituation
+from .interaction_composer import plan_interaction, summarize_session
 
 
 @dataclass
@@ -137,6 +138,8 @@ class MCRLanguageEngine:
             graph,
             assistant_action=response.act,
             outcome="answered" if validation.valid else "response_validation_failed",
+            user_text=graph.original,
+            assistant_text=text,
         )
         pragmatic_diagnostics = analyze_pragmatics(tuple(graph.tokens)).diagnostics()
         if not validation.valid:
@@ -181,12 +184,89 @@ class MCRLanguageEngine:
             },
         )
 
+
+    def _answer_interaction_plan(self, utterance: str, plan) -> Answer:
+        """Execute a conversational operation compiled from clause structure."""
+        if plan.operation == "emit_user_requested_text":
+            response_text = plan.payload
+            action = "emit_user_requested_text"
+            outcome = "completed"
+            title = "Executed explicit speech-output directive"
+        elif plan.operation == "perform_symbolic_action":
+            response_text = plan.payload
+            action = f"perform_{plan.action}"
+            outcome = "completed_symbolically"
+            title = f"Performed symbolic expression: {plan.action}"
+        elif plan.operation == "admit_action_limit":
+            response_text = (
+                f"I can't physically {plan.action}; I don't have a body. "
+                f"I can still express it in text or symbols."
+            )
+            action = f"admit_physical_limit_{plan.action}"
+            outcome = "capability_boundary_explained"
+            title = f"Honest capability boundary: {plan.action}"
+        elif plan.operation == "summarize_session_history":
+            response_text = summarize_session(self.situation.recent_turns)
+            action = "summarize_recorded_session"
+            outcome = "answered_from_session_history"
+            title = "Recap generated from recorded conversation turns"
+        elif plan.operation == "acknowledge_interjection":
+            reaction = plan.payload
+            if reaction in {"wow", "wowow", "whoa", "woah", "omg"}:
+                response_text = f"{reaction.capitalize()}! What's going on?"
+            elif reaction in {"hmm", "huh"}:
+                response_text = "What's on your mind?"
+            elif reaction in {"oops", "yikes"}:
+                response_text = "No worries—what happened?"
+            elif reaction in {"lol", "haha", "hehe", "lmao"}:
+                response_text = "Haha—what's funny?"
+            else:
+                response_text = f"{reaction.capitalize()}! Tell me more."
+            action = "acknowledge_social_reaction"
+            outcome = "continued_conversation"
+            title = "Recognized a standalone conversational reaction"
+        else:
+            response_text = "I recognized an interaction request but cannot execute that operation yet."
+            action = "admit_unsupported_interaction"
+            outcome = "capability_boundary_explained"
+            title = "Unsupported interaction operation"
+
+        self.situation.record_action(
+            action,
+            outcome,
+            user_text=utterance,
+            assistant_text=response_text,
+        )
+        self.discourse.turn_count += 1
+        self.discourse.last_speech_act = f"interaction.{plan.operation}"
+        return Answer(
+            text=response_text,
+            confidence=plan.support,
+            abstained=False,
+            selected_title=title,
+            source="MCR-L compositional interaction planner",
+            diagnostics={
+                "mode": "interaction_composition",
+                "interaction_plan": plan.diagnostics(),
+                "situation": self.situation.snapshot(),
+                "principle": "intent and constraints are resolved before sentence realization",
+            },
+        )
+
     def answer(self, utterance: str) -> Answer:
-        # Deterministic capabilities are tried before open-topic fallback. They
-        # never query the knowledge base and therefore cannot inherit an old topic.
+        # Compile interaction-level meaning before factual retrieval. Explicit
+        # speech commands, requested actions, and history questions are not topics.
+        interaction_plan = plan_interaction(utterance)
+        if interaction_plan is not None:
+            return self._answer_interaction_plan(utterance, interaction_plan)
+
+        # Deterministic arithmetic is independent of topic knowledge.
         calculation = try_calculate(utterance)
         if calculation is not None:
-            self.situation.record_action("bounded_arithmetic", "completed")
+            self.situation.record_action(
+                "bounded_arithmetic", "completed",
+                user_text=utterance, assistant_text=calculation.text(),
+            )
             return Answer(
                 text=calculation.text(),
                 confidence=1.0,
@@ -218,9 +298,13 @@ class MCRLanguageEngine:
         if factual_intent:
             if not topic:
                 self.discourse.observe_graph(graph)
-                self.situation.observe(graph, "ask_for_subject", "clarification_requested")
+                clarification_text = "I can tell you're asking something, but I can't identify the subject yet. What thing are you asking about?"
+                self.situation.observe(
+                    graph, "ask_for_subject", "clarification_requested",
+                    user_text=graph.original, assistant_text=clarification_text,
+                )
                 return Answer(
-                    text="I can tell you're asking something, but I can't identify the subject yet. What thing are you asking about?",
+                    text=clarification_text,
                     confidence=0.0,
                     abstained=False,
                     selected_title="Clarification: missing topic",
@@ -256,7 +340,10 @@ class MCRLanguageEngine:
                 )
                 self.discourse.observe_graph(graph)
                 self.discourse.remember_topic(topic)
-                self.situation.observe(graph, "answer_source_backed_facts", "answered")
+                self.situation.observe(
+                    graph, "answer_source_backed_facts", "answered",
+                    user_text=graph.original, assistant_text=composed.text,
+                )
                 sources = sorted({fact["source"] for fact in composed.selected_facts})
                 return Answer(
                     text=composed.text,
@@ -284,9 +371,13 @@ class MCRLanguageEngine:
             if record is not None:
                 self.discourse.observe_graph(graph)
                 self.discourse.remember_topic(topic)
-                self.situation.observe(graph, "answer_source_backed_document", "answered")
+                document_answer = record["answer"].strip()
+                self.situation.observe(
+                    graph, "answer_source_backed_document", "answered",
+                    user_text=graph.original, assistant_text=document_answer,
+                )
                 return Answer(
-                    text=record["answer"].strip(),
+                    text=document_answer,
                     confidence=score,
                     abstained=False,
                     selected_title=record["title"],
@@ -308,7 +399,10 @@ class MCRLanguageEngine:
             )
             self.discourse.observe_graph(graph)
             self.discourse.remember_topic(topic)
-            self.situation.observe(graph, "admit_missing_evidence", "abstained")
+            self.situation.observe(
+                graph, "admit_missing_evidence", "abstained",
+                user_text=graph.original, assistant_text=composed.text,
+            )
             return Answer(
                 text=composed.text,
                 confidence=0.0,
@@ -330,9 +424,13 @@ class MCRLanguageEngine:
             topic = topic or "that topic"
             self.discourse.avoid_topic(topic)
             self.discourse.observe_graph(graph)
-            self.situation.observe(graph, "respect_topic_boundary", "acknowledged")
+            boundary_text = f"Got it — I won't bring up {topic} unless you ask."
+            self.situation.observe(
+                graph, "respect_topic_boundary", "acknowledged",
+                user_text=graph.original, assistant_text=boundary_text,
+            )
             return Answer(
-                text=f"Got it — I won't bring up {topic} unless you ask.",
+                text=boundary_text,
                 confidence=1.0,
                 abstained=False,
                 selected_title="Acknowledged topic boundary",
@@ -341,9 +439,13 @@ class MCRLanguageEngine:
 
         self.discourse.observe_graph(graph)
         if graph.speech_act == "assertion":
-            self.situation.observe(graph, "continue_conversation", "continued")
+            continuation_text = "Got you. I may be missing some context, though—what would you like to explore about that?"
+            self.situation.observe(
+                graph, "continue_conversation", "continued",
+                user_text=graph.original, assistant_text=continuation_text,
+            )
             return Answer(
-                text="Got you. I may be missing some context, though—what would you like to explore about that?",
+                text=continuation_text,
                 confidence=0.0,
                 abstained=False,
                 selected_title="Conversational continuation",
@@ -355,9 +457,13 @@ class MCRLanguageEngine:
                 },
             )
 
-        self.situation.observe(graph, "request_clarification", "clarification_requested")
+        clarification_text = "I'm not fully following what you're asking yet. Could you say a little more about what you mean?"
+        self.situation.observe(
+            graph, "request_clarification", "clarification_requested",
+            user_text=graph.original, assistant_text=clarification_text,
+        )
         return Answer(
-            text="I'm not fully following what you're asking yet. Could you say a little more about what you mean?",
+            text=clarification_text,
             confidence=0.0,
             abstained=True,
             selected_title="Clarification needed",
