@@ -474,9 +474,9 @@ class SemanticCompositionTests(unittest.TestCase):
         self.assertNotEqual(result.diagnostics["situation"]["current_topic"].lower(), "smile")
 
     def test_unknown_physical_action_is_not_misrouted_as_a_topic(self) -> None:
-        result = self.engine.answer("can you dance for me?")
+        result = self.engine.answer("can you sing for me?")
         self.assertFalse(result.abstained)
-        self.assertIn("can't physically dance", result.text.lower())
+        self.assertIn("can't physically sing", result.text.lower())
         self.assertEqual(
             result.diagnostics["interaction_plan"]["operation"],
             "perform_symbolic_action",
