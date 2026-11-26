@@ -384,81 +384,25 @@ def _gold_children(sentence: Sequence[ConlluToken]) -> dict[int, set[int]]:
     return children
 
 
-def _oracle_actions(sentence: Sequence[ConlluToken]):
-    """Yield gold arc-standard states/actions; return None for non-projective trees."""
+def training_examples(
+    sentence: Sequence[ConlluToken],
+    model: MathematicalSyntaxModel | None = None,
+):
+    """Materialize gold states using predicted POS tags, matching inference conditions."""
     stack = [0]
     buffer = list(range(1, len(sentence) + 1))
     gold_heads = {token.id: token.head for token in sentence}
     gold_rels = {token.id: token.deprel for token in sentence}
     children = _gold_children(sentence)
     attached: set[int] = set()
+    if model is not None:
+        forms = [item.form for item in sentence]
+        predicted_pos = model.tag(forms)
+    else:
+        predicted_pos = [item.upos for item in sentence]
     tokens = [
-        ParseToken(item.id, item.form, item.lemma, item.upos, item.feats, item.head, item.deprel)
-        for item in sentence
-    ]
-    heads: dict[int, tuple[int, str]] = {}
-    steps = 0
-    max_steps = len(sentence) * 3 + 8
-    while (buffer or len(stack) > 1) and steps < max_steps:
-        steps += 1
-        action = None
-        if len(stack) >= 2:
-            s1, s0 = stack[-2], stack[-1]
-            if (
-                s1 != 0
-                and gold_heads[s1] == s0
-                and children.get(s1, set()).issubset(attached)
-            ):
-                action = f"LEFT|{gold_rels[s1]}"
-                stack.pop(-2)
-                heads[s1] = (s0, gold_rels[s1])
-                attached.add(s1)
-            elif (
-                s0 != 0
-                and gold_heads[s0] == s1
-                and children.get(s0, set()).issubset(attached)
-            ):
-                action = f"RIGHT|{gold_rels[s0]}"
-                stack.pop()
-                heads[s0] = (s1, gold_rels[s0])
-                attached.add(s0)
-        if action is None:
-            if buffer:
-                action = "SHIFT"
-                stack.append(buffer.pop(0))
-            else:
-                return None
-        features = parser_features(stack, buffer, tokens, heads)
-        # Features describe the state before the action. Reconstruct the previous
-        # state by reversing the simple stack/buffer transition.
-        if action == "SHIFT":
-            buffer.insert(0, stack.pop())
-        elif action.startswith("LEFT|"):
-            dependent = next(
-                token_id for token_id, (head, _rel) in heads.items()
-                if token_id not in attached - {token_id} and False
-            ) if False else None
-            # The left arc dependent was the former second-to-top stack item.
-            # Rebuild state from gold prefix is less error-prone in the caller.
-            return None
-        else:
-            return None
-        yield stack, buffer, heads, action
-    if len(attached) != len(sentence):
-        return None
-
-
-def training_examples(sentence: Sequence[ConlluToken]):
-    """Materialize gold parser configurations for one projective dependency tree."""
-    stack = [0]
-    buffer = list(range(1, len(sentence) + 1))
-    gold_heads = {token.id: token.head for token in sentence}
-    gold_rels = {token.id: token.deprel for token in sentence}
-    children = _gold_children(sentence)
-    attached: set[int] = set()
-    tokens = [
-        ParseToken(item.id, item.form, item.lemma, item.upos, item.feats, item.head, item.deprel)
-        for item in sentence
+        ParseToken(item.id, item.form, item.lemma, predicted_pos[index], item.feats, item.head, item.deprel)
+        for index, item in enumerate(sentence)
     ]
     heads: dict[int, tuple[int, str]] = {}
     steps = 0
@@ -520,7 +464,7 @@ def train_models(
                 guess = model.pos.predict(features, model.pos_labels)
                 model.pos.update(token.upos, guess, features)
                 mistakes += int(guess != token.upos)
-                previous.append(token.upos)
+                previous.append(guess)
         if progress:
             progress(f"POS epoch {epoch + 1}/{epochs}: token mistakes={mistakes}")
 
@@ -530,7 +474,7 @@ def train_models(
         parser_mistakes = 0
         valid_sentences = 0
         for sentence in sentences:
-            examples = list(training_examples(sentence))
+            examples = list(training_examples(sentence, model))
             if examples is None or not examples:
                 counts["nonprojective_skipped"] += 1
                 continue
