@@ -387,8 +387,8 @@ def _gold_children(sentence: Sequence[ConlluToken]) -> dict[int, set[int]]:
 def training_examples(
     sentence: Sequence[ConlluToken],
     model: MathematicalSyntaxModel | None = None,
-):
-    """Materialize gold states using predicted POS tags, matching inference conditions."""
+) -> list[tuple[list[str], str]] | None:
+    """Return complete gold parser configurations, or None for a non-projective tree."""
     stack = [0]
     buffer = list(range(1, len(sentence) + 1))
     gold_heads = {token.id: token.head for token in sentence}
@@ -405,6 +405,7 @@ def training_examples(
         for index, item in enumerate(sentence)
     ]
     heads: dict[int, tuple[int, str]] = {}
+    examples: list[tuple[list[str], str]] = []
     steps = 0
     max_steps = len(sentence) * 3 + 8
     while (buffer or len(stack) > 1) and steps < max_steps:
@@ -436,10 +437,10 @@ def training_examples(
                 return None
             action = "SHIFT"
             stack.append(buffer.pop(0))
-        yield features, action
+        examples.append((features, action))
     if len(attached) != len(sentence):
         return None
-
+    return examples
 
 def train_models(
     sentences: Sequence[Sequence[ConlluToken]],
@@ -474,7 +475,7 @@ def train_models(
         parser_mistakes = 0
         valid_sentences = 0
         for sentence in sentences:
-            examples = list(training_examples(sentence, model))
+            examples = training_examples(sentence, model)
             if examples is None or not examples:
                 counts["nonprojective_skipped"] += 1
                 continue
