@@ -52,16 +52,21 @@ class AveragedPerceptron:
             self._update_weight(feature, guess, -1.0)
 
     def averaged_weights(self) -> dict[str, dict[str, float]]:
-        """Return a detached averaged model for inference/serialization."""
+        """Return a detached averaged model, including parameters now at zero."""
         result: dict[str, dict[str, float]] = {}
-        for feature, labels in self.weights.items():
-            for label, weight in labels.items():
-                key = (feature, label)
-                total = self._totals.get(key, 0.0)
-                total += (self._step - self._timestamps.get(key, 0)) * weight
-                averaged = total / max(1, self._step)
-                if abs(averaged) >= 1e-9:
-                    result.setdefault(feature, {})[label] = averaged
+        keys = set(self._totals) | {
+            (feature, label)
+            for feature, labels in self.weights.items()
+            for label in labels
+        }
+        for feature, label in keys:
+            current = self.weights.get(feature, {}).get(label, 0.0)
+            key = (feature, label)
+            total = self._totals.get(key, 0.0)
+            total += (self._step - self._timestamps.get(key, 0)) * current
+            averaged = total / max(1, self._step)
+            if abs(averaged) >= 1e-9:
+                result.setdefault(feature, {})[label] = averaged
         return result
 
     def set_weights(self, weights: dict[str, dict[str, float]]) -> None:
