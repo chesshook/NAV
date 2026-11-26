@@ -54,25 +54,23 @@ IRREGULAR_FORMS = {
     "mice": ("mouse",), "feet": ("foot",), "teeth": ("tooth",),
 }
 RELATION_WEIGHTS = {
-    "hypernym": 0.82,
-    "hyponym": 0.82,
-    "instance_hypernym": 0.76,
-    "instance_hyponym": 0.76,
-    "part_meronym": 0.72,
-    "member_meronym": 0.68,
-    "substance_meronym": 0.62,
-    "part_holonym": 0.72,
-    "member_holonym": 0.68,
-    "substance_holonym": 0.62,
-    "antonym": 0.88,
-    "similar": 0.58,
-    "attribute": 0.55,
-    "entails": 0.62,
-    "causes": 0.62,
-    "also": 0.35,
-    "derivation": 0.32,
-    "domain_topic": 0.25,
-    "domain_region": 0.22,
+    "hypernym": 0.82, "hyponym": 0.82,
+    "instance_hypernym": 0.76, "instance_hyponym": 0.76,
+    "mero_part": 0.72, "mero_member": 0.68, "mero_substance": 0.62,
+    "holo_part": 0.72, "holo_member": 0.68, "holo_substance": 0.62,
+    "mero_location": 0.52, "holo_location": 0.52,
+    "part_meronym": 0.72, "member_meronym": 0.68, "substance_meronym": 0.62,
+    "part_holonym": 0.72, "member_holonym": 0.68, "substance_holonym": 0.62,
+    "meronym": 0.62, "holonym": 0.62,
+    "antonym": 0.88, "anto_gradable": 0.82, "anto_simple": 0.86, "anto_converse": 0.78,
+    "similar": 0.58, "attribute": 0.55, "entails": 0.62, "causes": 0.62,
+    "is_caused_by": 0.62, "is_entailed_by": 0.62, "also": 0.35,
+    "derivation": 0.32, "participle": 0.32, "pertainym": 0.30,
+    "domain_topic": 0.25, "domain_region": 0.22,
+    "has_domain_topic": 0.25, "has_domain_region": 0.22,
+    "exemplifies": 0.24, "is_exemplified_by": 0.24,
+    "agent": 0.40, "patient": 0.40, "role": 0.38, "result": 0.40,
+    "instrument": 0.34, "location": 0.28, "manner_of": 0.28,
     "other": 0.18,
 }
 
@@ -276,6 +274,15 @@ class LexicalSemanticNetwork:
     );
     CREATE INDEX IF NOT EXISTS idx_relations_target ON relations(target_synset);
     CREATE INDEX IF NOT EXISTS idx_relations_source ON relations(source_synset);
+    CREATE TABLE IF NOT EXISTS sense_relations (
+        source_sense TEXT NOT NULL,
+        target_sense TEXT NOT NULL,
+        relation_type TEXT NOT NULL,
+        dataset TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (source_sense, target_sense, relation_type)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sense_relations_target ON sense_relations(target_sense);
+    CREATE INDEX IF NOT EXISTS idx_sense_relations_source ON sense_relations(source_sense);
     CREATE TABLE IF NOT EXISTS network_meta (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
@@ -308,6 +315,7 @@ class LexicalSemanticNetwork:
             "lemmas": int(self.conn.execute("SELECT COUNT(*) FROM lemmas").fetchone()[0]),
             "concepts": int(self.conn.execute("SELECT COUNT(*) FROM concepts").fetchone()[0]),
             "relations": int(self.conn.execute("SELECT COUNT(*) FROM relations").fetchone()[0]),
+            "sense_relations": int(self.conn.execute("SELECT COUNT(*) FROM sense_relations").fetchone()[0]),
             "learned_associations": int(self.conn.execute("SELECT COUNT(*) FROM learned_associations").fetchone()[0]),
         }
 
@@ -345,6 +353,7 @@ class LexicalSemanticNetwork:
         imported_lemmas = 0
         imported_concepts = 0
         imported_relations = 0
+        imported_sense_relations = 0
 
         # Pass 1: lexical forms and their sense-to-synset mappings.
         stream = self._open_xml(path)
@@ -414,11 +423,40 @@ class LexicalSemanticNetwork:
             stack = []
             concepts_batch: list[tuple[str, str, str, str, str, str, str, str]] = []
             relations_batch: list[tuple[str, str, str, str]] = []
+            sense_relations_batch: list[tuple[str, str, str, str]] = []
             for event, elem in ET.iterparse(stream, events=("start", "end")):
                 if event == "start":
                     stack.append(elem)
                     continue
-                if _local(elem.tag) == "Synset":
+                if _local(elem.tag) == "LexicalEntry":
+                    for sense in elem.iter():
+                        if _local(sense.tag) != "Sense":
+                            continue
+                        source_sense = sense.attrib.get("id", "").strip()
+                        if not source_sense:
+                            continue
+                        for relation in sense.iter():
+                            if _local(relation.tag) != "SenseRelation":
+                                continue
+                            target_sense = relation.attrib.get("target", "").strip()
+                            rel_type = relation.attrib.get("relType", "other").strip()
+                            if target_sense:
+                                sense_relations_batch.append(
+                                    (source_sense, target_sense, rel_type, dataset)
+                                )
+                    parent = stack[-2] if len(stack) > 1 else None
+                    if parent is not None:
+                        parent.remove(elem)
+                    elem.clear()
+                    if len(sense_relations_batch) >= batch_size:
+                        self.conn.executemany(
+                            "INSERT OR IGNORE INTO sense_relations "
+                            "(source_sense,target_sense,relation_type,dataset) VALUES(?,?,?,?)",
+                            sense_relations_batch,
+                        )
+                        imported_sense_relations += len(sense_relations_batch)
+                        sense_relations_batch.clear()
+                elif _local(elem.tag) == "Synset":
                     synset_id = elem.attrib.get("id", "").strip()
                     pos = elem.attrib.get("partOfSpeech", "")
                     ili = elem.attrib.get("ili", "")
@@ -477,6 +515,13 @@ class LexicalSemanticNetwork:
                     relations_batch,
                 )
                 imported_relations += len(relations_batch)
+            if sense_relations_batch:
+                self.conn.executemany(
+                    "INSERT OR IGNORE INTO sense_relations "
+                    "(source_sense,target_sense,relation_type,dataset) VALUES(?,?,?,?)",
+                    sense_relations_batch,
+                )
+                imported_sense_relations += len(sense_relations_batch)
         finally:
             stream.close()
 
@@ -491,6 +536,7 @@ class LexicalSemanticNetwork:
             "lemma_links_imported": imported_lemmas,
             "concepts_imported": imported_concepts,
             "relations_imported": imported_relations,
+            "sense_relations_imported": imported_sense_relations,
             **self.counts(),
         }
 
@@ -600,16 +646,37 @@ class LexicalSemanticNetwork:
         ).fetchall()
         return [dict(row) for row in rows]
 
-    def _relation_support(self, left: str, right: str) -> float:
-        if left == right:
+    def _relation_support(
+        self,
+        left: str,
+        right: str,
+        left_sense: str = "",
+        right_sense: str = "",
+    ) -> float:
+        if left == right and (not left_sense or left_sense == right_sense):
             return 0.0
         rows = self.conn.execute(
             "SELECT relation_type FROM relations "
             "WHERE (source_synset=? AND target_synset=?) "
-            "OR (source_synset=? AND target_synset=?) LIMIT 8",
+            "OR (source_synset=? AND target_synset=?) LIMIT 12",
             (left, right, right, left),
         ).fetchall()
-        return max((RELATION_WEIGHTS.get(row[0], RELATION_WEIGHTS["other"]) for row in rows), default=0.0)
+        weights = [
+            RELATION_WEIGHTS.get(row[0], RELATION_WEIGHTS["other"])
+            for row in rows
+        ]
+        if left_sense and right_sense:
+            sense_rows = self.conn.execute(
+                "SELECT relation_type FROM sense_relations "
+                "WHERE (source_sense=? AND target_sense=?) "
+                "OR (source_sense=? AND target_sense=?) LIMIT 12",
+                (left_sense, right_sense, right_sense, left_sense),
+            ).fetchall()
+            weights.extend(
+                RELATION_WEIGHTS.get(row[0], RELATION_WEIGHTS["other"])
+                for row in sense_rows
+            )
+        return max(weights, default=0.0)
 
     @staticmethod
     def _score_lexical_context(
@@ -733,7 +800,8 @@ class LexicalSemanticNetwork:
                     best_link = 0.0
                     for other in other_candidates[:16]:
                         edge_weight = self._relation_support(
-                            candidate["synset_id"], other["synset_id"]
+                            candidate["synset_id"], other["synset_id"],
+                            candidate.get("sense_id") or "", other.get("sense_id") or "",
                         )
                         context_weight = 0.20 + 0.80 * float(other["lexical_support"])
                         best_link = max(best_link, edge_weight * context_weight)
@@ -863,7 +931,10 @@ class LexicalSemanticNetwork:
                 if not left or not right:
                     continue
                 a, b = left[0], right[0]
-                score = self._relation_support(a["synset_id"], b["synset_id"])
+                score = self._relation_support(
+                    a["synset_id"], b["synset_id"],
+                    a.get("sense_id") or "", b.get("sense_id") or "",
+                )
                 if score > 0:
                     relation_edges.append({
                         "left_position": left_index,
