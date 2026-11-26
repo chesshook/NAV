@@ -589,17 +589,27 @@ class LexicalSemanticNetwork:
         return max((RELATION_WEIGHTS.get(row[0], RELATION_WEIGHTS["other"]) for row in rows), default=0.0)
 
     @staticmethod
-    def _score_lexical_context(definition: str, examples: Iterable[str], local_context: set[str], global_context: set[str], lemma_terms: set[str]) -> float:
-        if not local_context and not global_context:
+    def _score_lexical_context(
+        definition: str,
+        examples: Iterable[str],
+        local_context: set[str],
+        current_context: set[str],
+        history_context: set[str],
+        lemma_terms: set[str],
+    ) -> float:
+        if not local_context and not current_context and not history_context:
             return 0.20 if definition else 0.05
         evidence = _terms(definition)
         for example in examples:
             evidence.update(_terms(example))
         evidence.update(lemma_terms)
         local = len(evidence & local_context) / max(1, len(local_context))
-        global_score = len(evidence & global_context) / max(1, len(global_context))
-        density = len(evidence & (local_context | global_context)) / max(1, len(evidence))
-        return min(1.0, 0.55 * local + 0.25 * global_score + 0.20 * density)
+        current = len(evidence & current_context) / max(1, len(current_context))
+        history = len(evidence & history_context) / max(1, len(history_context))
+        density = len(evidence & (local_context | current_context | history_context)) / max(1, len(evidence))
+        # Historical dialogue is a weak prior, never allowed to overwhelm the
+        # lexical evidence in the current utterance.
+        return min(1.0, 0.50 * local + 0.25 * current + 0.10 * history + 0.15 * density)
 
     def analyze(
         self,
@@ -624,8 +634,6 @@ class LexicalSemanticNetwork:
 
         current_content = set(_terms(" ".join(surfaces)))
         historical_content = set(_terms(dialogue_context))
-        # Current-turn evidence dominates; dialogue context is a weaker signal.
-        global_context = current_content | historical_content
         counts = self.counts()
         if counts["concepts"] == 0 or counts["lemmas"] == 0:
             activations = tuple(
@@ -681,7 +689,7 @@ class LexicalSemanticNetwork:
                 lemma_terms = _terms(row.get("lemma", ""))
                 lexical = self._score_lexical_context(
                     row.get("definition") or "", examples, local_context,
-                    global_context, lemma_terms,
+                    current_content, historical_content, lemma_terms,
                 )
                 candidates.append({
                     **row,
@@ -803,7 +811,7 @@ class LexicalSemanticNetwork:
                         examples = []
                     support = self._score_lexical_context(
                         row.get("definition") or "", examples, local_context,
-                        global_context, _terms(row.get("lemma") or phrase),
+                        current_content, historical_content, _terms(row.get("lemma") or phrase),
                     )
                     phrase_candidates.append({
                         "synset_id": row["synset_id"],
