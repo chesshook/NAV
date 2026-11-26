@@ -14,7 +14,8 @@ if str(ROOT) not in sys.path:
 from mcrl.conllu import iter_conllu
 from mcrl.syntax_model import train_models, evaluate_model
 
-BASE_URL = "https://raw.githubusercontent.com/UniversalDependencies/UD_English-EWT/master"
+UD_COMMIT = "491be069d36e378f67c29f183699eea88308ea42"
+BASE_URL = f"https://raw.githubusercontent.com/UniversalDependencies/UD_English-EWT/{UD_COMMIT}"
 FILES = {
     "train": "en_ewt-ud-train.conllu",
     "dev": "en_ewt-ud-dev.conllu",
@@ -98,7 +99,7 @@ def main() -> int:
         model.metadata.update({
             "dataset": "Universal Dependencies English Web Treebank",
             "dataset_repository": "https://github.com/UniversalDependencies/UD_English-EWT",
-            "dataset_release_reference": "master (download URL recorded in this training script)",
+            "dataset_release_reference": UD_COMMIT,
             "dataset_license": "CC BY-SA 4.0",
             "train_sha256": sha256(files["train"]),
             "dev_sha256": sha256(files["dev"]),
