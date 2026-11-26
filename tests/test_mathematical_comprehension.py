@@ -58,10 +58,10 @@ class MathematicalSyntaxTests(unittest.TestCase):
             path = Path(directory) / "tiny.conllu"
             path.write_text(
                 "# sent_id = 1\n"
-                "1-2\\tdon't\\t_\\t_\\t_\\t_\\t_\\t_\\t_\\t_\\n"
-                "1\\tdo\\tdo\\tAUX\\tVBP\\tVerbForm=Fin\\t3\\taux\\t_\\t_\\n"
-                "2\\tn't\\tnot\\tPART\\tRB\\tPolarity=Neg\\t3\\tadvmod\\t_\\t_\\n"
-                "3\\tgo\\tgo\\tVERB\\tVB\\tVerbForm=Inf\\t0\\troot\\t_\\t_\\n\\n",
+                "1-2\tdon't\t_\t_\t_\t_\t_\t_\t_\t_\n"
+                "1\tdo\tdo\tAUX\tVBP\tVerbForm=Fin\t3\taux\t_\t_\n"
+                "2\tn't\tnot\tPART\tRB\tPolarity=Neg\t3\tadvmod\t_\t_\n"
+                "3\tgo\tgo\tVERB\tVB\tVerbForm=Inf\t0\troot\t_\t_\n\n",
                 encoding="utf-8",
             )
             sentence = next(iter_conllu(path))
