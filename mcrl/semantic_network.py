@@ -679,6 +679,104 @@ class LexicalSemanticNetwork:
         return max(weights, default=0.0)
 
     @staticmethod
+    def _chunks(values: list[str], size: int = 400) -> list[list[str]]:
+        return [values[index:index + size] for index in range(0, len(values), size)]
+
+    def _build_relation_matrix(
+        self,
+        provisional: dict[int, list[dict[str, Any]]],
+    ) -> dict[tuple[str, str, str, str], float]:
+        """Batch-load the utterance's candidate subgraph once, avoiding pairwise SQL."""
+        synsets: set[str] = set()
+        senses: set[str] = set()
+        sense_to_synset: dict[str, str] = {}
+        for candidates in provisional.values():
+            candidates.sort(
+                key=lambda item: float(item.get("lexical_support", 0.0)),
+                reverse=True,
+            )
+            del candidates[16:]
+            for candidate in candidates:
+                synset_id = str(candidate.get("synset_id") or "")
+                sense_id = str(candidate.get("sense_id") or "")
+                if synset_id:
+                    synsets.add(synset_id)
+                if synset_id and sense_id:
+                    senses.add(sense_id)
+                    sense_to_synset[sense_id] = synset_id
+
+        matrix: dict[tuple[str, str, str, str], float] = {}
+        synset_values = sorted(synsets)
+        for source_chunk in self._chunks(synset_values):
+            for target_chunk in self._chunks(synset_values):
+                if not source_chunk or not target_chunk:
+                    continue
+                source_marks = ",".join("?" for _ in source_chunk)
+                target_marks = ",".join("?" for _ in target_chunk)
+                rows = self.conn.execute(
+                    "SELECT source_synset,target_synset,relation_type FROM relations "
+                    f"WHERE source_synset IN ({source_marks}) "
+                    f"AND target_synset IN ({target_marks})",
+                    (*source_chunk, *target_chunk),
+                ).fetchall()
+                for row in rows:
+                    source = row["source_synset"]
+                    target = row["target_synset"]
+                    weight = RELATION_WEIGHTS.get(
+                        row["relation_type"], RELATION_WEIGHTS["other"]
+                    )
+                    for key in ((source, target, "", ""), (target, source, "", "")):
+                        matrix[key] = max(matrix.get(key, 0.0), weight)
+
+        sense_values = sorted(senses)
+        for source_chunk in self._chunks(sense_values):
+            for target_chunk in self._chunks(sense_values):
+                if not source_chunk or not target_chunk:
+                    continue
+                source_marks = ",".join("?" for _ in source_chunk)
+                target_marks = ",".join("?" for _ in target_chunk)
+                rows = self.conn.execute(
+                    "SELECT source_sense,target_sense,relation_type FROM sense_relations "
+                    f"WHERE source_sense IN ({source_marks}) "
+                    f"AND target_sense IN ({target_marks})",
+                    (*source_chunk, *target_chunk),
+                ).fetchall()
+                for row in rows:
+                    source = row["source_sense"]
+                    target = row["target_sense"]
+                    source_synset = sense_to_synset.get(source, "")
+                    target_synset = sense_to_synset.get(target, "")
+                    if not source_synset or not target_synset:
+                        continue
+                    weight = RELATION_WEIGHTS.get(
+                        row["relation_type"], RELATION_WEIGHTS["other"]
+                    )
+                    matrix[(source_synset, target_synset, source, target)] = max(
+                        matrix.get((source_synset, target_synset, source, target), 0.0),
+                        weight,
+                    )
+                    matrix[(target_synset, source_synset, target, source)] = max(
+                        matrix.get((target_synset, source_synset, target, source), 0.0),
+                        weight,
+                    )
+        return matrix
+
+    @staticmethod
+    def _matrix_relation_support(
+        matrix: dict[tuple[str, str, str, str], float],
+        left: dict[str, Any],
+        right: dict[str, Any],
+    ) -> float:
+        left_synset = str(left.get("synset_id") or "")
+        right_synset = str(right.get("synset_id") or "")
+        left_sense = str(left.get("sense_id") or "")
+        right_sense = str(right.get("sense_id") or "")
+        return max(
+            matrix.get((left_synset, right_synset, "", ""), 0.0),
+            matrix.get((left_synset, right_synset, left_sense, right_sense), 0.0),
+        )
+
+    @staticmethod
     def _score_lexical_context(
         definition: str,
         examples: Iterable[str],
@@ -789,6 +887,10 @@ class LexicalSemanticNetwork:
                 })
             provisional[word_index] = candidates
 
+        # Batch-load the relevant semantic subgraph once for this utterance.
+        # Candidate-pair scoring below is then performed in memory.
+        relation_matrix = self._build_relation_matrix(provisional)
+
         # One relational-consistency pass. It checks whether a candidate sense
         # has a typed relation to plausible senses of other words in this utterance.
         for word_index, candidates in provisional.items():
@@ -798,10 +900,9 @@ class LexicalSemanticNetwork:
                     if other_index == word_index:
                         continue
                     best_link = 0.0
-                    for other in other_candidates[:16]:
-                        edge_weight = self._relation_support(
-                            candidate["synset_id"], other["synset_id"],
-                            candidate.get("sense_id") or "", other.get("sense_id") or "",
+                    for other in other_candidates:
+                        edge_weight = self._matrix_relation_support(
+                            relation_matrix, candidate, other
                         )
                         context_weight = 0.20 + 0.80 * float(other["lexical_support"])
                         best_link = max(best_link, edge_weight * context_weight)
@@ -931,10 +1032,7 @@ class LexicalSemanticNetwork:
                 if not left or not right:
                     continue
                 a, b = left[0], right[0]
-                score = self._relation_support(
-                    a["synset_id"], b["synset_id"],
-                    a.get("sense_id") or "", b.get("sense_id") or "",
-                )
+                score = self._matrix_relation_support(relation_matrix, a, b)
                 if score > 0:
                     relation_edges.append({
                         "left_position": left_index,
