@@ -13,6 +13,7 @@ LMF_SAMPLE = """<?xml version="1.0" encoding="UTF-8"?>
   <Lexicon id="en" label="test">
     <LexicalEntry id="bank-fin" partOfSpeech="n">
       <Lemma writtenForm="bank"/>
+      <Form writtenForm="banks"/>
       <Sense id="bank-fin-sense" synset="bank-financial"/>
     </LexicalEntry>
     <LexicalEntry id="bank-riv" partOfSpeech="n">
@@ -96,6 +97,21 @@ class SemanticNetworkTests(unittest.TestCase):
         self.assertEqual(bank.status, "resolved")
         self.assertEqual(bank.selected_sense, "bank-fin-sense")
         self.assertGreater(bank.candidates[0].total_support, bank.candidates[-1].total_support)
+
+    def test_current_utterance_overrides_an_old_topic_in_sense_scoring(self):
+        self.import_sample()
+        analysis = self.network.analyze(
+            "money bank",
+            dialogue_context="river water shore land river bank",
+        )
+        bank = next(item for item in analysis.tokens if item.surface == "bank")
+        self.assertEqual(bank.selected_sense, "bank-fin-sense")
+
+    def test_dictionary_inflections_map_to_the_lemma_sense(self):
+        self.import_sample()
+        banks = self.network.analyze("banks")
+        self.assertEqual(banks.tokens[0].status, "resolved")
+        self.assertEqual(banks.tokens[0].selected_sense, "bank-fin-sense")
 
     def test_ambiguous_word_is_not_forced_when_context_does_not_disambiguate(self):
         self.import_sample()
