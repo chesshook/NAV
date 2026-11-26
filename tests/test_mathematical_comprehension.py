@@ -8,6 +8,7 @@ from mcrl.conllu import ConlluToken, iter_conllu
 from mcrl.syntax_model import MathematicalSyntaxModel, evaluate_model, train_models
 from mcrl.semantic_network import LexicalSemanticNetwork
 from mcrl.compositional_semantics import compose_meaning
+from mcrl.syntax_model import ParseResult, ParseToken
 
 
 def token(i, form, lemma, upos, head, relation, feats="_"):
@@ -108,6 +109,26 @@ class MathematicalSyntaxTests(unittest.TestCase):
         self.assertTrue(any(role["role"] == "grammatical_subject" for role in clause["roles"]))
         self.assertTrue(any(role["role"] == "direct_object_or_patient_candidate" for role in clause["roles"]))
         self.assertFalse(meaning["language_model_used_for_understanding"])
+
+    def test_context_dependent_short_reaction_points_to_previous_turn(self):
+        parsed = ParseResult(
+            text="really ?",
+            tokens=(
+                ParseToken(1, "really", "really", "ADV", head=0, deprel="root"),
+                ParseToken(2, "?", "?", "PUNCT", head=1, deprel="punct"),
+            ),
+        )
+        meaning = compose_meaning(
+            "really?",
+            parsed,
+            history=[{"user": "Previous utterance", "meaning": "prior proposition"}],
+        )
+        self.assertEqual(
+            meaning["communicative_function"],
+            "fragment_or_elliptical_follow_up",
+        )
+        self.assertTrue(meaning["discourse_reference_candidates"])
+        self.assertIn("possible reference to the previous turn", meaning["meaning_summary"])
 
     def test_question_and_declarative_sentences_have_different_structural_functions(self):
         model, _ = train_models(TRAINING_SENTENCES * 10, epochs=6)
