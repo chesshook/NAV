@@ -16,3 +16,8 @@ data/*.xml.gz
 data/*.zip
 data/*.lmf
 *.gguf
+
+# Generated local syntax models and downloaded UD corpora
+data/models/
+data/training/
+*.conllu
