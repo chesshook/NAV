@@ -400,6 +400,7 @@ class NeuralDialogueCore:
         utterance: str,
         history: Sequence[Mapping[str, str]] = (),
         deep_reasoning: bool = False,
+        lexical_context: Mapping[str, Any] | None = None,
     ) -> NeuralTurn:
         text = (utterance or "").strip()
         if not text:
@@ -408,7 +409,12 @@ class NeuralDialogueCore:
         frame_input = {
             "recent_conversation": context,
             "latest_user_utterance": text,
-            "task": "Interpret the latest message in context and return the semantic frame.",
+            "lexical_semantic_network": dict(lexical_context or {}),
+            "task": (
+                "Interpret the latest message in context and return the semantic frame. "
+                "Use the lexical network as sense-level evidence, not as a substitute "
+                "for grammar, discourse intent, or truth verification."
+            ),
         }
         frame = _validate_interpretation(self.client.complete_json(
             [
@@ -440,6 +446,7 @@ class NeuralDialogueCore:
         realization_input = {
             "recent_conversation": context,
             "latest_user_utterance": text,
+            "lexical_semantic_network": dict(lexical_context or {}),
             "semantic_interpretation": frame,
             "response_plan": plan,
             "instruction": (
