@@ -387,7 +387,7 @@ def _gold_children(sentence: Sequence[ConlluToken]) -> dict[int, set[int]]:
 def training_examples(
     sentence: Sequence[ConlluToken],
     model: MathematicalSyntaxModel | None = None,
-) -> list[tuple[list[str], str]] | None:
+) -> list[tuple[list[str], str, set[str]]] | None:
     """Return complete gold parser configurations, or None for a non-projective tree."""
     stack = [0]
     buffer = list(range(1, len(sentence) + 1))
@@ -405,12 +405,24 @@ def training_examples(
         for index, item in enumerate(sentence)
     ]
     heads: dict[int, tuple[int, str]] = {}
-    examples: list[tuple[list[str], str]] = []
+    examples: list[tuple[list[str], str, set[str]]] = []
     steps = 0
     max_steps = len(sentence) * 3 + 8
     while (buffer or len(stack) > 1) and steps < max_steps:
         steps += 1
         features = parser_features(stack, buffer, tokens, heads)
+        allowed: set[str] = set()
+        if buffer:
+            allowed.add("SHIFT")
+        if len(stack) >= 2:
+            if stack[-2] != 0:
+                allowed.update(f"LEFT|{label}" for label in (
+                    model.dependency_labels if model is not None else {item.deprel for item in sentence}
+                ))
+            if stack[-1] != 0:
+                allowed.update(f"RIGHT|{label}" for label in (
+                    model.dependency_labels if model is not None else {item.deprel for item in sentence}
+                ))
         action = None
         if len(stack) >= 2:
             s1, s0 = stack[-2], stack[-1]
@@ -437,7 +449,9 @@ def training_examples(
                 return None
             action = "SHIFT"
             stack.append(buffer.pop(0))
-        examples.append((features, action))
+        if action not in allowed:
+            return None
+        examples.append((features, action, allowed))
     if len(attached) != len(sentence):
         return None
     return examples
@@ -480,12 +494,8 @@ def train_models(
                 counts["nonprojective_skipped"] += 1
                 continue
             valid_sentences += 1
-            for features, truth in examples:
-                # The action space is the complete label set plus SHIFT. The
-                # perceptron learns transition scores; inference masks invalid arcs.
-                allowed = {"SHIFT"}
-                allowed.update(f"LEFT|{label}" for label in model.dependency_labels)
-                allowed.update(f"RIGHT|{label}" for label in model.dependency_labels)
+            for features, truth, allowed in examples:
+                # Train against the same state-valid action mask used at inference.
                 guess = model.dependencies.predict(features, allowed)
                 model.dependencies.update(truth, guess, features)
                 parser_mistakes += int(guess != truth)
