@@ -46,20 +46,25 @@ in its definition, examples, and lemma. Let C_local(i) be the terms in the surro
 five-word window and C_turn be the current utterance's content terms plus a lower
 weight dialogue context.
 
-The lexical support used in this prototype is:
+The lexical support used in this prototype separates the current sentence from
+historical conversation:
 
 \[
-L(s\mid i)=0.55\frac{|G(s)\cap C_{local}(i)|}{\max(1,|C_{local}(i)|)}
-+0.25\frac{|G(s)\cap C_{turn}|}{\max(1,|C_{turn}|)}
-+0.20\frac{|G(s)\cap(C_{local}(i)\cup C_{turn})|}{\max(1,|G(s)|)}
+\begin{aligned}
+L(s\mid i)=&
+0.50\frac{|G(s)\cap C_{local}(i)|}{\max(1,|C_{local}(i)|)}\\
+&+0.25\frac{|G(s)\cap C_{turn}|}{\max(1,|C_{turn}|)}\\
+&+0.10\frac{|G(s)\cap C_{history}|}{\max(1,|C_{history}|)}\\
+&+0.15\frac{|G(s)\cap(C_{local}(i)\cup C_{turn}\cup C_{history})|}{\max(1,|G(s)|)}
+\end{aligned}
 \]
 
-For typed relation r, the network assigns a relation weight w(r). Relation support
-measures whether a candidate sense is linked to plausible senses of other words:
+For typed relation r, the network assigns a relation weight w(r). A neighboring
+candidate t contributes only in proportion to its own lexical support q(t):
 
 \[
 R(s_i)=\max_{j\ne i,\,t\in S_j,\,r\in E}
-w(r)\,\mathbf{1}[(s_i,t,r)\in E]
+w(r)\,(0.20+0.80q(t))\,\mathbf{1}[(s_i,t,r)\in E]
 \]
 
 The combined engineering support is:
