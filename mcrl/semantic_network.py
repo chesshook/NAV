@@ -22,7 +22,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 
-TOKEN_RE = re.compile(r"[^\W_]+(?:['’][^\W_]+)*|\d+(?:[.,]\d+)*|[^\w\s]", re.UNICODE)
+TOKEN_RE = re.compile(r"\d+(?:[.,]\d+)*|[^\W_]+(?:['’][^\W_]+)*|[^\w\s]", re.UNICODE)
 WORD_RE = re.compile(r"[^\W_]+", re.UNICODE)
 STOPWORDS = {
     "a", "an", "and", "are", "as", "at", "be", "been", "being", "but", "by",
@@ -40,6 +40,18 @@ CHAT_NORMALIZATION = {
     "thx": ("thanks",),
     "pls": ("please",),
     "plz": ("please",),
+}
+IRREGULAR_FORMS = {
+    "am": ("be",), "is": ("be",), "are": ("be",), "was": ("be",),
+    "were": ("be",), "been": ("be",), "being": ("be",),
+    "did": ("do",), "does": ("do",), "done": ("do",),
+    "has": ("have",), "had": ("have",),
+    "went": ("go",), "gone": ("go",),
+    "taught": ("teach",), "thought": ("think",),
+    "made": ("make",), "saw": ("see",), "seen": ("see",),
+    "bought": ("buy",), "brought": ("bring",),
+    "children": ("child",), "men": ("man",), "women": ("woman",),
+    "mice": ("mouse",), "feet": ("foot",), "teeth": ("tooth",),
 }
 RELATION_WEIGHTS = {
     "hypernym": 0.82,
@@ -353,14 +365,24 @@ class LexicalSemanticNetwork:
                         pos = elem.attrib.get("partOfSpeech", lemma_elem.attrib.get("partOfSpeech", ""))
                         entry_id = elem.attrib.get("id", "")
                         if lemma:
+                            inflected_forms = []
+                            for form_node in elem.iter():
+                                form_tag = _local(form_node.tag)
+                                if form_tag not in {"Form", "FormRepresentation"}:
+                                    continue
+                                form_text = form_node.attrib.get("writtenForm", "").strip()
+                                if form_text:
+                                    inflected_forms.append(form_text)
                             for sense in elem.iter():
                                 if _local(sense.tag) != "Sense":
                                     continue
                                 synset = sense.attrib.get("synset", "").strip()
                                 sense_id = sense.attrib.get("id", "")
                                 if synset:
-                                    normalized = lemma.lower().replace("_", " ").strip()
-                                    pending.append((normalized, lemma, pos, synset, sense_id, dataset))
+                                    all_forms = (lemma, *inflected_forms)
+                                    for lexical_form in all_forms:
+                                        normalized = lexical_form.lower().replace("_", " ").strip()
+                                        pending.append((normalized, lexical_form, pos, synset, sense_id, dataset))
                     parent = stack[-2] if len(stack) > 1 else None
                     if parent is not None:
                         parent.remove(elem)
@@ -507,15 +529,16 @@ class LexicalSemanticNetwork:
                 definition = str(record.get("definition") or "")
                 examples = record.get("examples") or []
                 word_forms = record.get("lemmas") or []
+                inflected_forms = record.get("forms") or []
                 rels = record.get("relations") or []
-                if not isinstance(examples, list) or not isinstance(word_forms, list) or not isinstance(rels, list):
-                    raise ValueError(f"JSONL line {line_number} has invalid examples, lemmas, or relations.")
+                if not isinstance(examples, list) or not isinstance(word_forms, list) or not isinstance(inflected_forms, list) or not isinstance(rels, list):
+                    raise ValueError(f"JSONL line {line_number} has invalid examples, lemmas, forms, or relations.")
                 concepts.append((
                     synset_id, pos, definition, json.dumps(examples, ensure_ascii=False),
                     str(record.get("ili") or ""), dataset, license_name, source_url,
                 ))
                 counts["concepts_imported"] += 1
-                for lemma in word_forms:
+                for lemma in [*word_forms, *inflected_forms]:
                     if not isinstance(lemma, str) or not lemma.strip():
                         continue
                     normalized = lemma.lower().replace("_", " ").strip()
@@ -621,15 +644,15 @@ class LexicalSemanticNetwork:
         raw_tokens = TOKEN_RE.findall(text or "")
         words = [(i, token) for i, token in enumerate(raw_tokens) if any(ch.isalnum() for ch in token)]
         surfaces = [token.lower() for _, token in words]
-        expanded: list[tuple[int, str]] = []
         token_forms: dict[int, tuple[str, ...]] = {}
         for index, surface in words:
-            forms = CHAT_NORMALIZATION.get(surface, (surface,))
+            forms = CHAT_NORMALIZATION.get(
+                surface, IRREGULAR_FORMS.get(surface, (surface,))
+            )
             normalized: list[str] = []
             for form in forms:
                 variants = _lemma_variants(form)
                 normalized.extend(variants)
-                expanded.append((index, form))
             token_forms[index] = tuple(dict.fromkeys(normalized))
 
         current_content = set(_terms(" ".join(surfaces)))
