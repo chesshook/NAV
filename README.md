@@ -102,9 +102,10 @@ verified world facts. More bytes alone do not create understanding.
 
 The current sense score combines context compatibility and graph relation support:
 
-    lexical_support = 0.55 * local_gloss_overlap
-                    + 0.25 * utterance_context_overlap
-                    + 0.20 * evidence_density
+    lexical_support = 0.50 * local_gloss_overlap
+                    + 0.25 * current_utterance_overlap
+                    + 0.10 * prior_dialogue_overlap
+                    + 0.15 * evidence_density
 
     total_support = 0.72 * lexical_support
                   + 0.28 * typed_relation_support
