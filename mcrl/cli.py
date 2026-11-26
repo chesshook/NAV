@@ -10,6 +10,7 @@ import sys
 from .engine import MCRLanguageEngine
 from .knowledge import KnowledgeStore
 from .neural_engine import NeuralMCRLanguageEngine
+from .semantic_network import LexicalSemanticNetwork
 
 
 def _print_answer(engine: MCRLanguageEngine, utterance: str, debug: bool = False) -> None:
@@ -39,13 +40,16 @@ def _print_answer(engine: MCRLanguageEngine, utterance: str, debug: bool = False
 
 def interactive(engine: MCRLanguageEngine, debug: bool = False) -> None:
     if isinstance(engine, NeuralMCRLanguageEngine):
-        mode = "local learned-language mode"
+        mode = "local learned-language + semantic-network mode"
+        if engine.semantic_network is not None:
+            counts = engine.semantic_network.counts()
+            mode += f" ({counts['concepts']} concepts, {counts['relations']} relations)"
         if engine.deep_reasoning:
-            mode += " with separate deliberation pass"
-        print(f"MCR-L 0.8 · {mode}")
+            mode += " with deliberation"
+        print(f"MCR-L 0.9 · {mode}")
     else:
-        print("MCR-L 0.8 · symbolic baseline (bounded language coverage)")
-    print("Type /exit to quit. Use --debug to inspect the interpretation and response plan.")
+        print("MCR-L 0.9 · symbolic baseline (bounded language coverage)")
+    print("Type /exit to quit. Use --debug to inspect lexical activation and interpretation.")
     while True:
         try:
             utterance = input("\nyou> ").strip()
@@ -61,16 +65,23 @@ def interactive(engine: MCRLanguageEngine, debug: bool = False) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="MCR-L: CPU-first language understanding with an optional local learned model"
+        description="MCR-L: mathematical lexical semantics and contextual language reasoning"
     )
     parser.add_argument("query", nargs="*", help="message or question to submit")
-    parser.add_argument("--db", default=None, help="SQLite knowledge database path")
+    parser.add_argument("--db", default=None, help="SQLite factual knowledge database path")
     parser.add_argument("--interactive", action="store_true", help="start a conversation loop")
     parser.add_argument("--load-demo-documents", action="store_true", help="explicitly load the small project/computing demo document set")
-    parser.add_argument("--import-jsonl", metavar="FILE", help="stream sourced document records into the database")
-    parser.add_argument("--import-facts-jsonl", metavar="FILE", help="stream source-attributed subject-predicate-object facts into the database")
+    parser.add_argument("--import-jsonl", metavar="FILE", help="stream sourced document records into the factual database")
+    parser.add_argument("--import-facts-jsonl", metavar="FILE", help="stream source-attributed subject-predicate-object facts into the factual database")
     parser.add_argument("--debug", action="store_true", help="print structured semantic and response diagnostics")
-    parser.add_argument("--neural", action="store_true", help="use the configured local pretrained language model for natural language")
+    parser.add_argument("--semantic-inspect", action="store_true", help="run the lexical-semantic network only and print word/phrase activations")
+    parser.add_argument("--lexicon-db", default="data/semantic_network.sqlite", help="SQLite lexical-semantic graph database")
+    parser.add_argument("--import-wordnet-lmf", metavar="FILE", help="stream-import a Global WordNet LMF XML, XML.GZ, or ZIP dictionary")
+    parser.add_argument("--import-semantic-jsonl", metavar="FILE", help="stream-import custom concept JSONL into the semantic network")
+    parser.add_argument("--lexicon-source", default="User supplied semantic dictionary", help="dataset attribution label for a custom JSONL import")
+    parser.add_argument("--lexicon-license", default="Unspecified; verify before redistribution", help="license/usage terms recorded with imported lexical data")
+    parser.add_argument("--lexicon-source-url", default="", help="origin URL recorded with imported lexical data")
+    parser.add_argument("--neural", action="store_true", help="use the local pretrained language model with the mathematical semantic network")
     parser.add_argument("--think", action="store_true", help="add a separate structured deliberation pass before writing the reply (requires --neural)")
     parser.add_argument("--model-url", default=os.environ.get("MCRL_MODEL_URL", "http://127.0.0.1:8080/v1"), help="OpenAI-compatible local API base URL")
     parser.add_argument("--model-name", default=os.environ.get("MCRL_MODEL_NAME", "gguf/Qwen3.5-2B-GGUF:Q4_K_M"), help="model identifier sent to the local server")
@@ -80,9 +91,13 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.think and not args.neural:
         parser.error("--think requires --neural")
+    if args.semantic_inspect and not " ".join(args.query).strip():
+        parser.error("--semantic-inspect requires a query.")
+    if args.import_wordnet_lmf and args.import_semantic_jsonl:
+        parser.error("Import one lexical dataset per command so attribution remains unambiguous.")
 
-    database_path = args.db or ":memory:"
-    store = KnowledgeStore(database_path)
+    store = KnowledgeStore(args.db or ":memory:")
+    lexicon: LexicalSemanticNetwork | None = None
     try:
         seed = Path(__file__).resolve().parent / "data" / "seed.jsonl"
         if args.load_demo_documents and seed.exists():
@@ -98,6 +113,41 @@ def main(argv: list[str] | None = None) -> int:
             count = store.import_facts_jsonl(args.import_facts_jsonl)
             print(f"Imported/updated {count} semantic facts. Fact store now contains {store.fact_count()} facts.")
             imported_any = True
+
+        needs_lexicon = bool(
+            args.import_wordnet_lmf or args.import_semantic_jsonl
+            or args.semantic_inspect or args.neural
+        )
+        if needs_lexicon:
+            lexicon = LexicalSemanticNetwork(args.lexicon_db)
+
+        if args.import_wordnet_lmf:
+            counts = lexicon.import_lmf(
+                args.import_wordnet_lmf,
+                dataset="Open English WordNet 2025+",
+                license_name="CC BY 4.0 (preserve source attribution and notices)",
+                source_url="https://github.com/globalwordnet/english-wordnet",
+            )
+            print("Imported Open English WordNet lexical graph:")
+            print(json.dumps(counts, indent=2))
+            imported_any = True
+
+        if args.import_semantic_jsonl:
+            counts = lexicon.import_jsonl(
+                args.import_semantic_jsonl,
+                dataset=args.lexicon_source,
+                license_name=args.lexicon_license,
+                source_url=args.lexicon_source_url,
+            )
+            print("Imported custom semantic dictionary:")
+            print(json.dumps(counts, indent=2))
+            imported_any = True
+
+        if args.semantic_inspect:
+            analysis = lexicon.analyze(" ".join(args.query))
+            print(json.dumps(analysis.diagnostics(), indent=2, ensure_ascii=False))
+            return 0
+
         if imported_any and not args.query and not args.interactive:
             return 0
 
@@ -109,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
                 api_key=args.model_api_key,
                 timeout=args.model_timeout,
                 deep_reasoning=args.think,
+                semantic_network=lexicon,
             )
         else:
             engine = MCRLanguageEngine(store)
@@ -126,6 +177,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"MCR-L error: {exc}", file=sys.stderr)
         return 2
     finally:
+        if lexicon is not None:
+            lexicon.close()
         store.close()
 
 
