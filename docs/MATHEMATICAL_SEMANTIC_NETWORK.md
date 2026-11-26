@@ -23,8 +23,9 @@ The current pipeline is:
 3. **Context activation.** Compare each sense gloss, examples, and lemma against the
    nearby words and the complete utterance. The most recent dialogue is a weaker
    secondary context, never a replacement for the current sentence.
-4. **Relation propagation.** Use typed graph edges (hypernym, hyponym, part/whole,
-   antonym, entailment, cause, and other relations) to add contextual support.
+4. **Relation propagation.** Use both concept-to-concept synset edges and
+   sense-to-sense lexical edges (hypernym, meronym/holonym, antonym, derivation,
+   entailment, cause, and other WN-LMF relations) to add contextual support.
 5. **Ambiguity preservation.** Select a sense only when one candidate is sufficiently
    better supported. Otherwise retain multiple candidates and mark the word ambiguous.
 6. **Phrase activation.** Check contiguous two-to-five-word sequences against
@@ -96,8 +97,9 @@ The data is stored in:
     data/semantic_network.sqlite
 
 The importer accepts uncompressed XML/LMF, gzip-compressed XML/LMF, and ZIP archives.
-It streams lexical entries first, then definitions, examples, synsets, and relations;
-it does not load the complete dictionary into RAM.
+It streams lexical entries and sense-to-sense relations first, then concept definitions,
+examples, synsets, and synset-to-synset relations; it does not load the complete
+dictionary into RAM.
 
 The Open English WordNet project reports for its 2025+ release:
 - 161,875 word forms;
