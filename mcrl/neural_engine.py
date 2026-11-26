@@ -10,6 +10,7 @@ from .neural_dialogue import (
     OpenAICompatibleClient,
 )
 from .situation_model import TurnRecord
+from .semantic_network import LexicalSemanticNetwork, SemanticAnalysis
 
 
 class NeuralMCRLanguageEngine(MCRLanguageEngine):
@@ -29,6 +30,7 @@ class NeuralMCRLanguageEngine(MCRLanguageEngine):
         timeout: float = 180.0,
         deep_reasoning: bool = False,
         core: NeuralDialogueCore | None = None,
+        semantic_network: LexicalSemanticNetwork | None = None,
     ) -> None:
         super().__init__(store)
         client = OpenAICompatibleClient(
@@ -36,6 +38,7 @@ class NeuralMCRLanguageEngine(MCRLanguageEngine):
         )
         self.neural_core = core or NeuralDialogueCore(client)
         self.deep_reasoning = bool(deep_reasoning)
+        self.semantic_network = semantic_network
         self.neural_history: list[dict[str, str]] = []
 
     def _remember(self, user_text: str, assistant_text: str) -> None:
@@ -87,19 +90,36 @@ class NeuralMCRLanguageEngine(MCRLanguageEngine):
             self.discourse.remember_topic(topic)
 
     def answer(self, utterance: str) -> Answer:
-        # Keep the bounded AST calculator for exact, safe arithmetic. Everything
-        # else is interpreted by the learned language model first.
+        # Encode every user utterance through the lexical-semantic network first.
+        # Unknown words remain explicit subword nodes; they are not discarded.
+        lexical_analysis: SemanticAnalysis | None = None
+        lexical_context: dict | None = None
+        if self.semantic_network is not None:
+            previous_context = " ".join(
+                f"{turn.get('user', '')} {turn.get('assistant', '')}"
+                for turn in self.neural_history[-8:]
+            )
+            lexical_analysis = self.semantic_network.analyze(
+                utterance, dialogue_context=previous_context
+            )
+            lexical_context = lexical_analysis.prompt_view()
+
+        # Exact arithmetic remains a deterministic capability after lexical encoding.
         if try_calculate(utterance) is not None:
             result = super().answer(utterance)
+            if lexical_analysis is not None:
+                result.diagnostics["semantic_network"] = lexical_analysis.diagnostics()
             self._remember(utterance, result.text)
             return result
 
         try:
-            turn = self.neural_core.respond(
-                utterance,
-                history=self.neural_history,
-                deep_reasoning=self.deep_reasoning,
-            )
+            request = {
+                "history": self.neural_history,
+                "deep_reasoning": self.deep_reasoning,
+            }
+            if lexical_context is not None:
+                request["lexical_context"] = lexical_context
+            turn = self.neural_core.respond(utterance, **request)
         except (LocalModelError, ValueError) as exc:
             return Answer(
                 text=(
@@ -114,6 +134,9 @@ class NeuralMCRLanguageEngine(MCRLanguageEngine):
                 diagnostics={
                     "mode": "neural_backend_error",
                     "error": str(exc),
+                    "semantic_network": (
+                        lexical_analysis.diagnostics() if lexical_analysis is not None else None
+                    ),
                     "model": getattr(
                         getattr(self.neural_core, "client", None), "model", "injected-core"
                     ),
@@ -127,13 +150,20 @@ class NeuralMCRLanguageEngine(MCRLanguageEngine):
             confidence=0.0,
             abstained=False,
             selected_title="Contextual learned-language interpretation and realization",
-            source="Local pretrained model via OpenAI-compatible inference API",
+            source=(
+                "MCR-L lexical-semantic network plus local pretrained model"
+                if lexical_analysis is not None
+                else "Local pretrained model via OpenAI-compatible inference API"
+            ),
             diagnostics={
                 "mode": "neural_dialogue",
                 "model": turn.model,
                 "deliberated": turn.deliberated,
                 "interpretation": turn.interpretation,
                 "response_plan": turn.plan,
+                "semantic_network": (
+                    lexical_analysis.diagnostics() if lexical_analysis is not None else None
+                ),
                 "confidence_semantics": (
                     "No calibrated probability is claimed; inspect interpretation, "
                     "ambiguity, and uncertainties instead."

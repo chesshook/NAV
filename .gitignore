@@ -1,0 +1,18 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local lexical and factual knowledge databases
+data/*.sqlite
+data/*.sqlite3
+data/*.db
+data/*.sqlite-journal
+
+# Downloaded lexical datasets and model files
+data/*.xml
+data/*.xml.gz
+data/*.zip
+data/*.lmf
+*.gguf
