@@ -6,11 +6,13 @@ import json
 import os
 from pathlib import Path
 import sys
+from typing import Any
 
 from .engine import MCRLanguageEngine
 from .knowledge import KnowledgeStore
 from .neural_engine import NeuralMCRLanguageEngine
 from .semantic_network import LexicalSemanticNetwork
+from .mathematical_engine import MathematicalComprehensionEngine
 
 
 def _print_answer(engine: MCRLanguageEngine, utterance: str, debug: bool = False) -> None:
@@ -38,8 +40,38 @@ def _print_answer(engine: MCRLanguageEngine, utterance: str, debug: bool = False
         print(json.dumps(result.diagnostics, indent=2, ensure_ascii=False))
 
 
-def interactive(engine: MCRLanguageEngine, debug: bool = False) -> None:
-    if isinstance(engine, NeuralMCRLanguageEngine):
+def _print_understanding(
+    engine: MathematicalComprehensionEngine,
+    utterance: str,
+    debug: bool = False,
+) -> None:
+    result = engine.understand(utterance)
+    print("\nMCR-L meaning:", result.meaning["meaning_summary"])
+    print(
+        "[mode=mathematical-comprehension | "
+        f"parse_complete={result.meaning['parse_complete']} | "
+        f"unknown_words={len(result.meaning['unknown_lexical_items'])} | "
+        f"ambiguous_words={len(result.meaning['ambiguous_lexical_items'])} | "
+        "LLM_used=False]"
+    )
+    if debug:
+        print(json.dumps(result.to_dict(), indent=2, ensure_ascii=False))
+
+
+def interactive(
+    engine: MCRLanguageEngine | MathematicalComprehensionEngine,
+    debug: bool = False,
+) -> None:
+    if isinstance(engine, MathematicalComprehensionEngine):
+        counts = engine.lexicon.counts()
+        print(
+            "MCR-L 1.0 · independent mathematical-comprehension mode\n"
+            f"Lexicon: {counts['concepts']} concepts, {counts['lemmas']} word-sense links, "
+            f"{counts['relations']} concept relations, {counts['sense_relations']} sense relations\n"
+            "Syntax: sparse averaged-perceptron POS tagger + dependency parser\n"
+            "No LLM is called. This mode interprets; it does not yet generate learned answers."
+        )
+    elif isinstance(engine, NeuralMCRLanguageEngine):
         mode = "local learned-language + semantic-network mode"
         if engine.semantic_network is not None:
             counts = engine.semantic_network.counts()
@@ -51,8 +83,8 @@ def interactive(engine: MCRLanguageEngine, debug: bool = False) -> None:
             mode += " with deliberation"
         print(f"MCR-L 0.9 · {mode}")
     else:
-        print("MCR-L 0.9 · symbolic baseline (bounded language coverage)")
-    print("Type /exit to quit. Use --debug to inspect lexical activation and interpretation.")
+        print("MCR-L · symbolic baseline (bounded language coverage)")
+    print("Type /exit to quit. Use --debug to inspect the full semantic structure.")
     while True:
         try:
             utterance = input("\nyou> ").strip()
@@ -63,12 +95,15 @@ def interactive(engine: MCRLanguageEngine, debug: bool = False) -> None:
             continue
         if utterance.lower() in {"/exit", "/quit"}:
             break
-        _print_answer(engine, utterance, debug=debug)
+        if isinstance(engine, MathematicalComprehensionEngine):
+            _print_understanding(engine, utterance, debug=debug)
+        else:
+            _print_answer(engine, utterance, debug=debug)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="MCR-L: mathematical lexical semantics and contextual language reasoning"
+        description="MCR-L: mathematical lexical semantics, compositional understanding, and language reasoning"
     )
     parser.add_argument("query", nargs="*", help="message or question to submit")
     parser.add_argument("--db", default=None, help="SQLite factual knowledge database path")
@@ -77,6 +112,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--import-jsonl", metavar="FILE", help="stream sourced document records into the factual database")
     parser.add_argument("--import-facts-jsonl", metavar="FILE", help="stream source-attributed subject-predicate-object facts into the factual database")
     parser.add_argument("--debug", action="store_true", help="print structured semantic and response diagnostics")
+
     parser.add_argument("--semantic-inspect", action="store_true", help="run the lexical-semantic network only and print word/phrase activations")
     parser.add_argument("--lexicon-db", default="data/semantic_network.sqlite", help="SQLite lexical-semantic graph database")
     parser.add_argument("--import-wordnet-lmf", metavar="FILE", help="stream-import a Global WordNet LMF XML, XML.GZ, or ZIP dictionary")
@@ -84,6 +120,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--lexicon-source", default="User supplied semantic dictionary", help="dataset attribution label for a custom JSONL import")
     parser.add_argument("--lexicon-license", default="Unspecified; verify before redistribution", help="license/usage terms recorded with imported lexical data")
     parser.add_argument("--lexicon-source-url", default="", help="origin URL recorded with imported lexical data")
+
+    parser.add_argument(
+        "--mathematical", action="store_true",
+        help="understand utterances using only the dictionary graph and locally trained mathematical syntax model; no LLM",
+    )
+    parser.add_argument(
+        "--syntax-model", default="data/models/mcrl_syntax_v1.json",
+        help="trained sparse POS/dependency model produced by tools/train_mathematical_core.py",
+    )
     parser.add_argument("--neural", action="store_true", help="use the local pretrained language model with the mathematical semantic network")
     parser.add_argument("--think", action="store_true", help="add a separate structured deliberation pass before writing the reply (requires --neural)")
     parser.add_argument("--model-url", default=os.environ.get("MCRL_MODEL_URL", "http://127.0.0.1:8080/v1"), help="OpenAI-compatible local API base URL")
@@ -94,8 +139,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.think and not args.neural:
         parser.error("--think requires --neural")
+    if args.mathematical and args.neural:
+        parser.error("--mathematical and --neural are separate modes; choose one.")
     if args.semantic_inspect and not " ".join(args.query).strip():
         parser.error("--semantic-inspect requires a query.")
+    if args.mathematical and not args.interactive and not " ".join(args.query).strip():
+        parser.error("--mathematical requires a query or --interactive.")
     if args.import_wordnet_lmf and args.import_semantic_jsonl:
         parser.error("Import one lexical dataset per command so attribution remains unambiguous.")
 
@@ -119,7 +168,7 @@ def main(argv: list[str] | None = None) -> int:
 
         needs_lexicon = bool(
             args.import_wordnet_lmf or args.import_semantic_jsonl
-            or args.semantic_inspect or args.neural
+            or args.semantic_inspect or args.neural or args.mathematical
         )
         if needs_lexicon:
             lexicon = LexicalSemanticNetwork(args.lexicon_db)
@@ -154,8 +203,24 @@ def main(argv: list[str] | None = None) -> int:
         if imported_any and not args.query and not args.interactive:
             return 0
 
-        if args.neural:
-            engine: MCRLanguageEngine = NeuralMCRLanguageEngine(
+        if args.mathematical:
+            model_path = Path(args.syntax_model)
+            if not model_path.exists():
+                raise FileNotFoundError(
+                    f"Mathematical syntax model not found: {model_path}. "
+                    "Train it first with: py -3 tools/train_mathematical_core.py --download --epochs 5"
+                )
+            if lexicon.counts()["concepts"] == 0:
+                raise ValueError(
+                    f"No dictionary concepts found in {args.lexicon_db}. "
+                    "Import Open English WordNet first with scripts/import-open-english-wordnet.cmd"
+                )
+            engine: MCRLanguageEngine | MathematicalComprehensionEngine = MathematicalComprehensionEngine(
+                syntax_model_path=str(model_path),
+                lexicon=lexicon,
+            )
+        elif args.neural:
+            engine = NeuralMCRLanguageEngine(
                 store,
                 base_url=args.model_url,
                 model=args.model_name,
@@ -174,7 +239,10 @@ def main(argv: list[str] | None = None) -> int:
         if not utterance:
             parser.print_help()
             return 0
-        _print_answer(engine, utterance, debug=args.debug)
+        if isinstance(engine, MathematicalComprehensionEngine):
+            _print_understanding(engine, utterance, debug=args.debug)
+        else:
+            _print_answer(engine, utterance, debug=args.debug)
         return 0
     except (OSError, ValueError) as exc:
         print(f"MCR-L error: {exc}", file=sys.stderr)
