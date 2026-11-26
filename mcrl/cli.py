@@ -43,7 +43,10 @@ def interactive(engine: MCRLanguageEngine, debug: bool = False) -> None:
         mode = "local learned-language + semantic-network mode"
         if engine.semantic_network is not None:
             counts = engine.semantic_network.counts()
-            mode += f" ({counts['concepts']} concepts, {counts['relations']} relations)"
+            mode += (
+                f" ({counts['concepts']} concepts, {counts['relations']} concept relations, "
+                f"{counts['sense_relations']} sense relations)"
+            )
         if engine.deep_reasoning:
             mode += " with deliberation"
         print(f"MCR-L 0.9 · {mode}")
