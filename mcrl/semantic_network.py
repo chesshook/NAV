@@ -732,10 +732,11 @@ class LexicalSemanticNetwork:
                         continue
                     best_link = 0.0
                     for other in other_candidates[:16]:
-                        best_link = max(
-                            best_link,
-                            self._relation_support(candidate["synset_id"], other["synset_id"]),
+                        edge_weight = self._relation_support(
+                            candidate["synset_id"], other["synset_id"]
                         )
+                        context_weight = 0.20 + 0.80 * float(other["lexical_support"])
+                        best_link = max(best_link, edge_weight * context_weight)
                     relation_score = max(relation_score, best_link)
                 candidate["relation_support"] = relation_score
 
