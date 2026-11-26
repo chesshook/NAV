@@ -40,17 +40,6 @@ CHAT_NORMALIZATION = {
     "thx": ("thanks",),
     "pls": ("please",),
     "plz": ("please",),
-    "dont": ("do", "not"),
-    "can't": ("can", "not"),
-    "cant": ("can", "not"),
-    "won't": ("will", "not"),
-    "wont": ("will", "not"),
-    "isnt": ("is", "not"),
-    "arent": ("are", "not"),
-    "im": ("i", "am"),
-    "i'm": ("i", "am"),
-    "youre": ("you", "are"),
-    "you're": ("you", "are"),
 }
 RELATION_WEIGHTS = {
     "hypernym": 0.82,
@@ -181,6 +170,7 @@ class SemanticAnalysis:
     activated_relations: tuple[dict[str, Any], ...]
     dictionary_ready: bool
     dictionary_counts: dict[str, int]
+    phrase_activations: tuple[dict[str, Any], ...] = ()
     method: str = "contextual lexical activation plus typed relation consistency"
 
     @property
@@ -216,6 +206,7 @@ class SemanticAnalysis:
             "dictionary_ready": self.dictionary_ready,
             "words": words,
             "activated_relations": list(self.activated_relations[:32]),
+            "phrase_activations": list(self.phrase_activations[:24]),
             "unresolved_words": list(self.unresolved_words[:24]),
             "notice": (
                 "Lexical evidence proposes word senses; it does not by itself determine "
@@ -234,6 +225,7 @@ class SemanticAnalysis:
             "unknown_count": len(self.unresolved_words),
             "tokens": [item.to_dict() for item in self.tokens],
             "activated_relations": list(self.activated_relations),
+            "phrase_activations": list(self.phrase_activations),
         }
 
 
@@ -674,11 +666,12 @@ class LexicalSemanticNetwork:
                 provisional[word_index] = []
                 continue
 
-            other_words = [
+            nearby_words = [
                 value for j, value in words
-                if j != word_index and value.lower() not in STOPWORDS and any(c.isalpha() for c in value)
+                if j != word_index and abs(j - word_index) <= 5
+                and value.lower() not in STOPWORDS and any(c.isalpha() for c in value)
             ]
-            local_context = set(_terms(" ".join(other_words[-5:] + other_words[:5])))
+            local_context = set(_terms(" ".join(nearby_words)))
             candidates: list[dict[str, Any]] = []
             for row in rows_by_synset.values():
                 try:
@@ -780,6 +773,55 @@ class LexicalSemanticNetwork:
             results.append(activation)
             by_position[word_index] = activation
 
+        # Multiword lexical entries are first-class patterns. They are represented
+        # separately from component words so a phrase sense is never confused with
+        # the independent senses of each token.
+        phrase_activations: list[dict[str, Any]] = []
+        for start in range(len(words)):
+            for width in range(2, 6):
+                chunk = words[start:start + width]
+                if len(chunk) != width:
+                    continue
+                positions = [item[0] for item in chunk]
+                if any(positions[i] + 1 != positions[i + 1] for i in range(len(positions) - 1)):
+                    continue
+                phrase = " ".join(item[1].lower() for item in chunk)
+                phrase_rows = self.lookup(phrase, limit=24)
+                if not phrase_rows:
+                    continue
+                covered = set(positions)
+                outside = [
+                    value for pos, value in words
+                    if pos not in covered and value.lower() not in STOPWORDS
+                ]
+                local_context = set(_terms(" ".join(outside)))
+                phrase_candidates = []
+                for row in phrase_rows:
+                    try:
+                        examples = json.loads(row.get("examples_json") or "[]")
+                    except json.JSONDecodeError:
+                        examples = []
+                    support = self._score_lexical_context(
+                        row.get("definition") or "", examples, local_context,
+                        global_context, _terms(row.get("lemma") or phrase),
+                    )
+                    phrase_candidates.append({
+                        "synset_id": row["synset_id"],
+                        "sense_id": row.get("sense_id") or "",
+                        "lemma": row.get("lemma") or phrase,
+                        "pos": row.get("part_of_speech") or "",
+                        "definition": row.get("definition") or "",
+                        "support": round(support, 5),
+                    })
+                phrase_candidates.sort(key=lambda item: item["support"], reverse=True)
+                phrase_activations.append({
+                    "phrase": phrase,
+                    "start_position": positions[0],
+                    "end_position": positions[-1],
+                    "candidates": phrase_candidates[:4],
+                    "note": "multiword lexical concept; component words remain separately encoded",
+                })
+
         # Expose only relations between the strongest candidates. This is evidence,
         # not an assertion that the words form a grammatical relation in the sentence.
         for left_index, left in provisional.items():
@@ -807,6 +849,7 @@ class LexicalSemanticNetwork:
             activated_relations=tuple(relation_edges[:64]),
             dictionary_ready=True,
             dictionary_counts=counts,
+            phrase_activations=tuple(phrase_activations[:64]),
         )
 
     def close(self) -> None:
