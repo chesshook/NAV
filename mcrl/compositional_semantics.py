@@ -260,12 +260,26 @@ def compose_meaning(
         })
 
     punctuation = {token.form for token in tokens if token.upos == "PUNCT"}
+    lexical_tokens = [token for token in tokens if token.upos != "PUNCT"]
     wh_tokens = [
-        token for token in tokens
+        token for token in lexical_tokens
         if token.lemma.lower() in WH_WORDS and token.upos in {"PRON", "DET", "ADV"}
     ]
     mood = _feature_map(primary_root.feats).get("Mood", "") if primary_root else ""
-    if "?" in punctuation or wh_tokens:
+    is_short_reaction = (
+        primary_root is not None
+        and len(lexical_tokens) <= 1
+        and primary_root.upos in {"ADV", "ADJ", "INTJ"}
+    )
+    if primary_root is not None and primary_root.upos == "INTJ":
+        communicative_function = "expressive_or_social_interjection"
+        question_type = None
+        interrogative_focus = []
+    elif is_short_reaction:
+        communicative_function = "fragment_or_elliptical_follow_up"
+        question_type = None
+        interrogative_focus = []
+    elif "?" in punctuation or wh_tokens:
         communicative_function = "interrogative"
         if wh_tokens:
             question_type = "wh_question"
@@ -283,10 +297,6 @@ def compose_meaning(
         interrogative_focus = []
     elif "!" in punctuation:
         communicative_function = "expressive_or_emphatic"
-        question_type = None
-        interrogative_focus = []
-    elif primary_root is not None and len(tokens) <= 2 and primary_root.upos in {"ADV", "ADJ", "INTJ"}:
-        communicative_function = "fragment_or_elliptical_follow_up"
         question_type = None
         interrogative_focus = []
     elif primary_root is not None:
@@ -347,6 +357,8 @@ def compose_meaning(
     meaning_summary = _render_structural_summary(
         communicative_function, question_type, clauses, modality, unresolved, ambiguous
     )
+    if discourse_reference_candidates:
+        meaning_summary = meaning_summary[:-1] + "; possible reference to the previous turn."
     return {
         "text": text,
         "architecture": "mathematical lexical network + learned sparse syntactic parser + compositional semantic graph",
