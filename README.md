@@ -1,141 +1,67 @@
-
-# MCR-L
+# MCR-L 1.0
 ## Mathematical Cognitive Resonance for Language
 
-MCR-L 0.9 adds a mathematical lexical-semantic network to the learned-language
-foundation. Its purpose is to represent word senses and relations explicitly, retain
-ambiguity, and provide reusable lexical evidence for understanding complete
-utterances. It is still a research prototype, not a claim of perfect understanding.
+MCR-L 1.0 adds an independent mathematical-comprehension mode. Unlike the earlier v0.8/v0.9 neural dialogue mode, the mathematical mode does not call Qwen or any LLM. It processes each utterance through a dictionary-backed lexical network, a locally trained sparse POS tagger, a dependency parser, and a compositional semantic graph.
 
-## Core architecture
+This is the first independent comprehension foundation, not a claim of perfect understanding or a finished conversational assistant.
 
-The intended flow is:
+## The modes are deliberately different
 
-    every word and phrase
-        -> lexical normalization and morphology
-        -> candidate dictionary senses
-        -> context-sensitive mathematical activation
-        -> typed semantic relation graph
-        -> sentence and discourse composition
-        -> intent / response planning
-        -> natural-language realization
+- Mathematical mode: lexical graph + CPU-trained mathematical syntax model + compositional meaning analysis. No LLM inference. It returns an inspectable interpretation and ambiguity report, not a canned question answer.
+- Neural mode: previous v0.8 Qwen-backed language interpretation and response realization. This remains available for comparison, but it is not the mode that implements the independent mathematical foundation.
+- Default mode: previous symbolic baseline.
 
-Every lexical item is retained. Known words activate candidate senses; multiword
-lexical entries become separate phrase nodes; unknown words remain unresolved nodes
-with character n-grams instead of being dropped or assigned an invented meaning.
+## Build the local data
 
-**The dictionary is not the sentence interpreter.** It describes possible lexical
-meanings. A separate compositional stage must work out grammar, who did what, who is
-being addressed, negation, modality, time, intent, references, and the speaker's
-commitment. A word's dictionary definition is not automatically what the speaker
-means in context.
+### 1. Import the lexical network
 
-The v0.8 local pretrained model remains the current broad sentence/discourse
-interpreter and language realizer. In v0.9 the mathematical network runs first and
-supplies dictionary sense candidates and relation evidence to it. This is a deliberate
-hybrid foundation—not yet a fully independent language engine.
+    scripts\import-open-english-wordnet.cmd
 
-## Import a real semantic dictionary
+This downloads Open English WordNet 2025+ and builds data\semantic_network.sqlite.
 
-The first supported lexical backbone is Open English WordNet 2025+. It is a graph of
-word forms, senses, glosses, examples, and typed relations, not merely a flat word list.
-The project's 2025+ release reports 161,875 word forms, 120,564 synsets, and 419,226
-relations. The project publishes it under CC BY 4.0; preserve attribution and source
-notices. See the
-[official repository](https://github.com/globalwordnet/english-wordnet) and
-[Princeton WordNet license information](https://wordnet.princeton.edu/license-and-commercial-use).
+### 2. Train the mathematical syntax core
 
-From the repository root on Windows:
+    scripts\train-mathematical-core.cmd
 
-    scripts/import-open-english-wordnet.cmd
+Equivalent:
 
-This downloads and imports the LMF dictionary into data/semantic_network.sqlite.
-The importer streams the XML twice into SQLite and does not load the full dictionary
-into memory.
+    py -3 tools\train_mathematical_core.py --download --epochs 5
 
-Inspect how a word is represented in context:
+The trainer downloads Universal Dependencies English EWT train/dev/test CoNLL-U files, trains a sparse averaged-perceptron POS tagger and arc-standard dependency parser, evaluates the development and held-out test splits, and writes data\models\mcrl_syntax_v1.json.
 
-    py -3 -m mcrl --lexicon-db data/semantic_network.sqlite --semantic-inspect "I deposited money at the bank."
+The UD English EWT annotations are CC BY-SA 4.0. The script records attribution, license metadata, and SHA-256 checksums. The corpus's source texts may have separate rights; see its upstream README and license: https://github.com/UniversalDependencies/UD_English-EWT
 
-The output includes the original surface words, normalization candidates, alternative
-senses, their support values, unknown words, and recognized multiword expressions.
-For a single ambiguous word such as "bank", multiple senses should remain available
-when context is insufficient.
+### 3. Start the independent comprehension interview
 
-## Run contextual conversation
+    py -3 -m mcrl --mathematical --interactive --debug --lexicon-db data\semantic_network.sqlite --syntax-model data\models\mcrl_syntax_v1.json
 
-Start llama.cpp in one terminal:
+There is no llama.cpp server to start for this mode. It runs locally on CPU, and does not request answers from Qwen.
 
-    scripts/start-local-model.cmd
+One-shot inspection:
 
-Then start MCR-L in another:
+    py -3 -m mcrl --mathematical --debug --lexicon-db data\semantic_network.sqlite --syntax-model data\models\mcrl_syntax_v1.json "I do not like the way the system handles unknown words."
 
-    py -3 -m mcrl --neural --interactive --debug
+## What the mathematical mode computes
 
-Now each utterance is encoded by the lexical-semantic network before the contextual
-sentence interpreter and response realizer run.
+1. Preserves the token sequence, including punctuation and informal contractions.
+2. Retrieves candidate dictionary senses for known words and phrases.
+3. Uses dictionary POS hints plus learned contextual features to predict each token's Universal POS category.
+4. Uses a learned dependency-transition network to predict the syntactic head and relation of each token.
+5. Composes predicates, subjects, objects, oblique relations, modifiers, embedded clauses, polarity, auxiliaries, modality, and question/directive/assertion structure.
+6. Keeps unknown lexical terms, ambiguous senses, and incomplete parses visible.
 
-The optional deliberation stage remains available:
+The meaning readout is a structural paraphrase of the current parse, not an answer template. Use --debug to see the complete meaning graph.
 
-    py -3 -m mcrl --neural --think --interactive --debug
+The sparse perceptron uses score(label | features) = sum(feature_weight[feature, label]). Weights are learned from a licensed syntactic corpus, not hand-authored per question. Its confidence is not calibrated, and generalization must be measured on unseen text.
 
-It is separate response planning; it does not make the semantic network itself more
-accurate, and it is not a reproduction of DeepSeek-R1 training.
+## Important limitations
 
-## Build a larger dictionary
+The initial grammar training data is English Web Treebank, about 16.6k sentences and 254.8k words, across web/social/blog/review/email genres. It gives the project a learned general syntax baseline, not all the grammatical or semantic knowledge of English. It will still make mistakes, especially with rare constructions, informal spelling, metaphor, sarcasm, nested scope, reference resolution, and world knowledge.
 
-A 2–5 GB storage budget can later hold much more than a dictionary: definitions,
-examples, syntactic frames, domain terminology, event relations, reviewed discourse
-examples, and user-taught concepts. MCR-L supports streaming custom JSONL import:
+This mode does not yet answer factual questions or teach itself new behaviours in chat. The immediate next stage is to improve and evaluate independent compositional meaning on unseen interview-style conversations. Chat-based teaching comes only after the meaning representation can reliably show what was said and what remains ambiguous.
 
-    py -3 -m mcrl --lexicon-db data/semantic_network.sqlite --import-semantic-jsonl my_lexicon.jsonl --lexicon-source "My dataset" --lexicon-license "CC BY 4.0" --lexicon-source-url "https://example.org"
+Full design and equations: docs/MATHEMATICAL_COMPREHENSION.md
 
-Each line is one concept record:
-
-    {"id":"vehicle.n.01","pos":"n","definition":"A means of transport.","examples":["The vehicle stopped."],"lemmas":["vehicle","motor vehicle"],"relations":[{"type":"hypernym","target":"artifact.n.01"}]}
-
-Large files are read in batches. Only import data whose license permits the intended
-use, preserve provenance, deduplicate records, and distinguish dictionary claims from
-verified world facts. More bytes alone do not create understanding.
-
-## Mathematical scoring
-
-The current sense score combines context compatibility and graph relation support:
-
-    lexical_support = 0.50 * local_gloss_overlap
-                    + 0.25 * current_utterance_overlap
-                    + 0.10 * prior_dialogue_overlap
-                    + 0.15 * evidence_density
-
-    total_support = 0.72 * lexical_support
-                  + 0.28 * typed_relation_support
-
-The support margin is used to retain ambiguity rather than forcing an arbitrary sense.
-These are engineering support values, not calibrated probabilities. Definitions and
-graph links are lexical evidence, not sentence-role assertions or proof that an
-utterance is factually true.
-
-See docs/MATHEMATICAL_SEMANTIC_NETWORK.md for the full design, equations, import format,
-and next research stages.
-
-## Testing
+## Run tests
 
     py -3 -m unittest discover -s tests -v
-
-The tests cover LMF import, JSONL import, ambiguous word senses, context-driven
-disambiguation, phrase concepts, unknown-word retention, and integration with the
-neural dialogue path. Tests do not prove complete understanding; interview-style
-held-out evaluation is still required.
-
-## The actual long-term goal
-
-MCR-L should learn to interpret arbitrary conversation before it is taught how to
-behave. The next research stage is to develop and evaluate sentence/discourse
-composition over licensed, reviewed examples. Once it can robustly represent what
-someone said—including ambiguity and uncertainty—we can build chat-based teaching
-that updates its concept and behaviour memory with explicit provenance.
-
-The lexical network is one foundation layer. Broad comprehension also requires
-syntax, compositional semantics, discourse, grounded knowledge, world models,
-pragmatics, and learned language realization. We will measure each capability rather
-than claim that a large dictionary alone solves them.
