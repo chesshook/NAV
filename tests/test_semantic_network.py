@@ -14,7 +14,9 @@ LMF_SAMPLE = """<?xml version="1.0" encoding="UTF-8"?>
     <LexicalEntry id="bank-fin" partOfSpeech="n">
       <Lemma writtenForm="bank"/>
       <Form writtenForm="banks"/>
-      <Sense id="bank-fin-sense" synset="bank-financial"/>
+      <Sense id="bank-fin-sense" synset="bank-financial">
+        <SenseRelation relType="antonym" target="bank-riv-sense"/>
+      </Sense>
     </LexicalEntry>
     <LexicalEntry id="bank-riv" partOfSpeech="n">
       <Lemma writtenForm="bank"/>
@@ -89,6 +91,14 @@ class SemanticNetworkTests(unittest.TestCase):
         ).fetchone()
         self.assertIsNotNone(relation)
         self.assertEqual(relation[0], "hypernym")
+        self.assertEqual(counts["sense_relations"], 1)
+        self.assertEqual(
+            self.network._relation_support(
+                "bank-financial", "bank-river",
+                "bank-fin-sense", "bank-riv-sense",
+            ),
+            0.88,
+        )
 
     def test_word_sense_is_selected_from_sentence_context_not_last_word(self):
         self.import_sample()
