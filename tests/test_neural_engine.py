@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import json
+import tempfile
+from pathlib import Path
 import unittest
 
 from mcrl.engine import MCRLanguageEngine
 from mcrl.knowledge import KnowledgeStore
 from mcrl.neural_dialogue import LocalModelError, NeuralTurn
 from mcrl.neural_engine import NeuralMCRLanguageEngine
+from mcrl.semantic_network import LexicalSemanticNetwork
 
 
 class FakeCore:
@@ -14,11 +18,12 @@ class FakeCore:
         self.error = error
         self.calls = []
 
-    def respond(self, utterance, history=(), deep_reasoning=False):
+    def respond(self, utterance, history=(), deep_reasoning=False, lexical_context=None):
         self.calls.append({
             "utterance": utterance,
             "history": list(history),
             "deep_reasoning": deep_reasoning,
+            "lexical_context": lexical_context,
         })
         if self.error:
             raise self.error
@@ -69,6 +74,34 @@ class NeuralEngineTests(unittest.TestCase):
             "Sure—what would you like to learn?",
         )
         self.assertEqual(engine.situation.recent_turns[-1].user_text, "Really?")
+
+    def test_semantic_network_encodes_utterance_before_neural_interpretation(self):
+        lexicon = LexicalSemanticNetwork(":memory:")
+        core = FakeCore([neural_turn("Yes, I understood the river context.")])
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "dictionary.jsonl"
+                path.write_text(
+                    json.dumps({
+                        "id": "river-sense",
+                        "pos": "n",
+                        "definition": "A natural stream of flowing water.",
+                        "lemmas": ["river"],
+                        "examples": [],
+                        "relations": [],
+                    }) + "\n",
+                    encoding="utf-8",
+                )
+                lexicon.import_jsonl(path, dataset="test", license_name="CC0")
+            engine = NeuralMCRLanguageEngine(
+                self.store, core=core, semantic_network=lexicon
+            )
+            result = engine.answer("river")
+            self.assertTrue(core.calls[0]["lexical_context"]["dictionary_ready"])
+            self.assertEqual(core.calls[0]["lexical_context"]["words"][0]["surface"], "river")
+            self.assertTrue(result.diagnostics["semantic_network"]["dictionary_ready"])
+        finally:
+            lexicon.close()
 
     def test_neural_backend_failure_does_not_fall_back_to_symbolic_keyword_parser(self):
         core = FakeCore(error=LocalModelError("server offline"))
